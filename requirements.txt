@@ -1,0 +1,14 @@
+# Algorithmic Trading App - Dependencies
+# Data & time
+pandas>=2.0.0
+numpy>=1.24.0
+pytz>=2023.3
+
+# Broker: Alpaca (official SDK)
+alpaca-py>=0.14.0
+
+# Config
+pyyaml>=6.0
+
+# Testing (optional)
+# pytest>=7.0.0

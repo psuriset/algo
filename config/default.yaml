@@ -1,0 +1,189 @@
+# Algorithmic Trading App - Default Configuration
+# Override via environment or config file per environment.
+
+# ---------------------------------------------------------------------------
+# 1) Universe & Data
+# ---------------------------------------------------------------------------
+universe:
+  # High-liquidity symbols (S&P 500 / top-volume ETFs)
+  symbols:
+    - SPY
+    - QQQ
+    - IWM
+    - DIA
+    - NVDA
+    - AAPL
+    - MSFT
+    - AMZN
+    - GOOGL
+    - META
+    - TSLA
+    - AVGO
+    - AMD
+    - NFLX
+    - JPM
+    - BRK.B
+  # Minimum liquidity / volume filters
+  min_avg_dollar_volume_30d: 50_000_000
+  min_atr_multiple_for_volume: 0.5   # min volume vs ATR-based expectation
+
+market_sessions:
+  pre_market:
+    start: "04:00"   # ET
+    end: "09:30"
+    trade_allowed: false   # thin liquidity
+  regular:
+    start: "09:30"
+    end: "16:00"
+    trade_allowed: true
+  after_hours:
+    start: "16:00"
+    end: "20:00"
+    trade_allowed: false   # wider spreads
+
+market_quality:
+  max_spread_pct: 0.10      # 0.10% = no trade if spread > this
+  min_volume_atr_ratio: 1.0
+  block_on_news_spike: true
+  news_volatility_spike_atr_multiple: 2.0
+
+# US market holidays / half-days (sample; extend per year)
+holidays: []   # populated at runtime or from calendar
+
+# ---------------------------------------------------------------------------
+# 1b) Trade filters: macro blackout, earnings blackout, volatility DNT
+# ---------------------------------------------------------------------------
+trade_filters:
+  # Macro-event blackout: no trading on these dates or time windows (ET)
+  macro_blackout:
+    enabled: true
+    # Full-day blackout (no trading all day)
+    blackout_dates: []   # e.g. ["2025-03-12", "2025-04-10"]  FOMC, CPI, etc.
+    # Or specific time windows on a date (start/end in ET, "HH:MM")
+    blackout_windows: []  # e.g. [{ date: "2025-03-12", start: "13:00", end: "15:30" }]
+
+  # Earnings blackout per symbol: no trading N days before/after earnings
+  earnings_blackout:
+    enabled: true
+    days_before: 1
+    days_after: 1
+    # Earnings dates per symbol (YYYY-MM-DD). Update manually or from calendar.
+    earnings_dates:
+      AAPL: []
+      MSFT: []
+      NVDA: []
+      AMZN: []
+      GOOGL: []
+      META: []
+      TSLA: []
+      AVGO: []
+      AMD: []
+      NFLX: []
+      JPM: []
+      BRK.B: []
+
+  # Volatility/spread-based "do not trade" (stricter than market_quality)
+  volatility_do_not_trade:
+    enabled: true
+    max_atr_pct: 2.5        # do not trade if 14d ATR% > this
+    max_spread_pct: 0.15    # do not trade if spread > this %
+
+# ---------------------------------------------------------------------------
+# 2) Strategy (Trend-following as default)
+# ---------------------------------------------------------------------------
+strategy:
+  type: trend_following   # trend_following | mean_reversion | breakout
+  # Adopt style by player type: institutional | retail | neutral
+  player_focus: neutral   # institutional = follow big volume/size; retail = faster, shorter horizon
+  # Institutional: only trade when volume >= N x 20d avg (proxy for institutional activity)
+  institutional:
+    min_volume_ratio_vs_avg: 1.2   # e.g. 1.2 = 20% above average volume
+  # Retail: shorter lookbacks and time exit (momentum / shorter horizon)
+  retail:
+    ma_fast: 10
+    ma_slow: 50
+    time_bars_exit: 10
+  # Candlestick filter: only enter when one of these patterns appears (uses same OHLC)
+  candlestick_filter:
+    enabled: false
+    patterns: [ "bullish_engulfing", "hammer" ]   # or "doji"; leave empty to allow any
+  trend_following:
+    ma_fast: 20
+    ma_slow: 200
+    pullback_touch_ma_fast: true
+    volatility_filter_atr_period: 14
+    max_atr_pct_for_entry: 2.0   # skip if ATR% > this (too volatile)
+  exits:
+    stop_loss_pct: 1.5
+    take_profit_pct: 3.0
+    time_bars_exit: 20
+    kill_switch:
+      max_spread_pct: 0.25
+      max_atr_multiple: 3.0
+
+# ---------------------------------------------------------------------------
+# 3) Position Sizing
+# ---------------------------------------------------------------------------
+position_sizing:
+  risk_per_trade_pct: 0.5      # 0.25 - 1.0
+  max_open_risk_pct: 3.0       # sum of stop distances cap (2-5%)
+  max_exposure_per_symbol_pct: 20.0
+  max_exposure_per_sector_pct: 40.0
+  # Position sizing reduction during high volatility regimes
+  high_vol_reduction:
+    enabled: true
+    atr_pct_threshold: 2.0     # when ATR% (14d) > this, reduce size
+    size_multiplier: 0.5       # multiply shares by this (e.g. half size)
+
+# ---------------------------------------------------------------------------
+# 4) Portfolio & Drawdown
+# ---------------------------------------------------------------------------
+portfolio_risk:
+  daily_loss_limit_pct: -2.0
+  max_drawdown_pct: -10.0
+  safe_mode_after_max_dd: true
+  recovery_criteria_pct: -8.0   # resume live after drawdown recovers to this
+  max_trades_per_day: 15
+  max_trades_per_symbol_per_day: 3
+
+# ---------------------------------------------------------------------------
+# 5) Execution
+# ---------------------------------------------------------------------------
+execution:
+  prefer_limit_orders: true
+  limit_order_offset_ticks: 1
+  max_spread_pct_to_trade: 0.10
+  partial_fill_timeout_seconds: 30
+  cancel_replace_on_partial: true
+  max_slippage_bps: 10
+  block_strategy_if_slippage_bps_avg_exceeds: 25
+
+# ---------------------------------------------------------------------------
+# 7) Broker (Alpaca)
+# ---------------------------------------------------------------------------
+broker:
+  firm: alpaca
+  paper: true
+  # Run continuously until market close (no user interaction):
+  #   python run_alpaca_loop.py
+  run_until_close: false
+  check_interval_minutes: 5
+  # Retry on API connection drops (e.g. "Remote end closed connection")
+  # api_retry_times: 3
+  # api_retry_delay_sec: 3.0
+  # data_feed: iex   # free. Use "sip" only if you have a paid data subscription.
+  # API keys from environment (never put real keys in this file):
+  #   export APCA_API_KEY_ID=your_key
+  #   export APCA_API_SECRET_KEY=your_secret
+  # Paper base URL (default): https://paper-api.alpaca.markets
+  # Live base URL: https://api.alpaca.markets
+
+# ---------------------------------------------------------------------------
+# 6) Compliance (PDT, etc.)
+# ---------------------------------------------------------------------------
+compliance:
+  pdt_min_equity: 25000
+  pdt_enabled: true
+  margin_account: true
+  day_trade_count_reset_calendar: "rolling_5_business_days"
+  best_execution_note: "Broker has best execution duty; app enforces limits only."
