@@ -225,14 +225,14 @@ Talks to **Alpaca** for account, data, and orders.
 
 | Script | Purpose |
 |--------|--------|
-| **`python run_example.py`** | Runs the engine once with **synthetic** OHLCV (no broker). Good for testing that entry gates and sizing work. |
-| **`python run_alpaca.py`** | Runs the engine once with **Alpaca**: gets equity, positions, bars, quote for the first universe symbol; runs entry gates; submits order if allowed. |
-| **`python run_alpaca_loop.py`** | Runs in a loop until market close: every N minutes checks **exits** for tracked positions (sells on stop/target/time/kill-switch), then checks **entries** for all symbols and submits buys. Uses `data/positions_tracked.json` for entry price/time. Stops on close or daily limit. |
-| **`python check_equity.py`** | Prints current Alpaca account equity. |
-| **`python check_prices.py`** | Prints latest price (quote or last close) for each symbol in the universe. |
-| **`python show_daily_summary.py [YYYY-MM-DD]`** | Prints that day’s summary: equity, trades (filled orders), open positions. No date = today. |
-| **`python reset_paper.py [--yes]`** | **Paper only.** Closes all positions, cancels open orders, clears local `data/positions_tracked.json`. Use to restart paper trading. To set balance (e.g. $100k), use Alpaca dashboard → Reset account. |
-| **`python show_sell_strategy.py`** | For each open position: entry price/date, stop-loss and take-profit levels, time exit (bars held vs exit-after), kill-switch conditions, and unrealized P&L. |
+| **`python scripts/run_example.py`** | Runs the engine once with **synthetic** OHLCV (no broker). Good for testing that entry gates and sizing work. |
+| **`python scripts/run_alpaca.py`** | Runs the engine once with **Alpaca**: gets equity, positions, bars, quote for the first universe symbol; runs entry gates; submits order if allowed. |
+| **`python scripts/run_alpaca_loop.py`** | Runs in a loop until market close: every N minutes checks **exits** for tracked positions (sells on stop/target/time/kill-switch), then checks **entries** for all symbols and submits buys. Uses `data/positions_tracked.json` for entry price/time. Stops on close or daily limit. |
+| **`python scripts/check_equity.py`** | Prints current Alpaca account equity. |
+| **`python scripts/check_prices.py`** | Prints latest price (quote or last close) for each symbol in the universe. |
+| **`python scripts/show_daily_summary.py [YYYY-MM-DD]`** | Prints that day’s summary: equity, trades (filled orders), open positions. No date = today. |
+| **`python scripts/reset_paper.py [--yes]`** | **Paper only.** Closes all positions, cancels open orders, clears local `data/positions_tracked.json`. Use to restart paper trading. To set balance (e.g. $100k), use Alpaca dashboard → Reset account. |
+| **`python scripts/show_sell_strategy.py`** | For each open position: entry price/date, stop-loss and take-profit levels, time exit (bars held vs exit-after), kill-switch conditions, and unrealized P&L. |
 
 ---
 

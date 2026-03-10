@@ -11,16 +11,18 @@ SCHEDULE.md
 GITHUB_PUSH.md
 .gitignore
 
-run_example.py
-run_alpaca.py
-run_alpaca_loop.py
-run_scheduled_alpaca.py
-start_trading_at_market_open.sh
+scripts/run_example.py
+scripts/run_alpaca.py
+scripts/run_alpaca_loop.py
+scripts/run_scheduled_alpaca.py
+scripts/check_equity.py
+scripts/check_prices.py
+scripts/check_positions.py
+scripts/show_daily_summary.py
+scripts/show_sell_strategy.py
+scripts/reset_paper.py
 
-check_equity.py
-check_prices.py
-check_positions.py
-show_daily_summary.py
+start_trading_at_market_open.sh
 
 src/__init__.py
 src/config_loader.py

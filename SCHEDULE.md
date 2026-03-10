@@ -84,5 +84,5 @@ Both assume API keys are in the environment (or set in the shell script for cron
 ## Default behavior
 
 - **No automatic scheduling.** The trading loop does not run at market open (or at any time) unless you start it or configure a schedule.
-- To run the loop once: `python run_alpaca.py` or `python run_alpaca_loop.py`.
+- To run the loop once: `python scripts/run_alpaca.py` or `python scripts/run_alpaca_loop.py`.
 - To schedule at market open: use Option 1 (cron) or Option 2 (run_scheduled_alpaca.py) only when you decide you want it.

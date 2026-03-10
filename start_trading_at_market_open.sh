@@ -8,4 +8,4 @@ cd "$SCRIPT_DIR"
 export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
 # Load API keys from .env if present (cron often has no env)
 [ -f "$SCRIPT_DIR/.env" ] && set -a && source "$SCRIPT_DIR/.env" && set +a
-python3 run_alpaca_loop.py
+python3 scripts/run_alpaca_loop.py

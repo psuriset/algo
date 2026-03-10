@@ -58,11 +58,17 @@ algo/
 │   ├── trading_engine.py # Orchestrates all gates and produces trade decision
 │   └── brokers/
 │       └── alpaca_client.py  # Alpaca: account, bars, quotes, order submission
-├── run_example.py        # Example: run entry gates with sample OHLCV (no broker)
-├── run_alpaca.py         # Run engine with Alpaca as broker (paper/live)
-├── show_daily_summary.py # Show that day's summary (trades, positions, equity)
-├── reset_paper.py       # Paper only: close all positions, clear state; use dashboard to set balance
-├── show_sell_strategy.py # Show sell strategy and timeline for each open position
+├── scripts/               # Run from project root: python scripts/<name>.py
+│   ├── run_example.py    # Example: run entry gates with sample OHLCV (no broker)
+│   ├── run_alpaca.py     # Run engine with Alpaca (paper/live)
+│   ├── run_alpaca_loop.py # Loop until market close (entries + exits)
+│   ├── run_scheduled_alpaca.py # Start loop at 9:30 AM ET
+│   ├── check_equity.py   # Print account equity
+│   ├── check_prices.py   # Latest prices for universe symbols
+│   ├── check_positions.py # Open positions and equity
+│   ├── show_daily_summary.py # That day's trades and positions
+│   ├── show_sell_strategy.py # Sell strategy/timeline per position
+│   └── reset_paper.py    # Paper only: close all, clear state
 ├── requirements.txt
 └── README.md
 ```
@@ -91,7 +97,7 @@ Set environment variables (never commit keys):
 Paper base URL is used automatically when `paper: true`. Then run:
 
 ```bash
-python run_alpaca.py
+python scripts/run_alpaca.py
 ```
 
 This uses your Alpaca account (paper or live) for equity and positions, fetches daily bars and latest quote for the first universe symbol, runs all entry gates, and submits the order to Alpaca if allowed.
@@ -99,7 +105,7 @@ This uses your Alpaca account (paper or live) for equity and positions, fetches 
 ## Run Example (no broker)
 
 ```bash
-python run_example.py
+python scripts/run_example.py
 ```
 
 This runs the full entry gate sequence for a sample symbol (SPY) with synthetic OHLCV and prints whether the trade is allowed and the order/sizing details.
