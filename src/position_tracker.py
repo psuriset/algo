@@ -44,6 +44,11 @@ def remove(base_path: Path | None, symbol: str) -> None:
     save(data, base_path)
 
 
+def clear_all(base_path: Path | None = None) -> None:
+    """Clear all tracked positions (e.g. after resetting paper account)."""
+    save({}, base_path)
+
+
 def bars_held(entry_time_iso: str, now: datetime | None = None) -> int:
     """Days held (for daily bars)."""
     try:

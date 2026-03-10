@@ -195,6 +195,13 @@ class AlpacaBroker:
     def get_order(self, order_id: str) -> Any:
         return self._trading.get_order_by_id(order_id)
 
+    def close_all_positions(self, cancel_orders: bool = True) -> list[Any]:
+        """Liquidate all open positions. If cancel_orders is True, cancel open orders first.
+        Returns list of close-position responses. Only use on paper accounts for reset."""
+        def _close() -> list[Any]:
+            return self._trading.close_all_positions(cancel_orders=cancel_orders) or []
+        return self._with_retry(_close)
+
     def get_orders_for_date(self, trade_date: "datetime | date") -> list[dict[str, Any]]:
         """Return orders (filled or closed) that were submitted on the given date (ET)."""
         from datetime import date as date_type

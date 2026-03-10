@@ -61,6 +61,8 @@ algo/
 ├── run_example.py        # Example: run entry gates with sample OHLCV (no broker)
 ├── run_alpaca.py         # Run engine with Alpaca as broker (paper/live)
 ├── show_daily_summary.py # Show that day's summary (trades, positions, equity)
+├── reset_paper.py       # Paper only: close all positions, clear state; use dashboard to set balance
+├── show_sell_strategy.py # Show sell strategy and timeline for each open position
 ├── requirements.txt
 └── README.md
 ```
