@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Show latest stock prices for tracked symbols (uses last quote when market is closed)."""
+"""Show latest stock prices for tracked symbols. Use --live or --paper to choose account."""
+import argparse
 import sys
 from pathlib import Path
 
@@ -10,7 +11,19 @@ from src.config_loader import load_config
 from src.brokers.alpaca_client import AlpacaBroker
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--live", action="store_true", help="Live account")
+    parser.add_argument("--paper", action="store_true", help="Paper account (default)")
+    args = parser.parse_args()
+    if args.live and args.paper:
+        parser.error("Use only one of --live or --paper")
+
     config = load_config(PROJECT_ROOT / "config" / "default.yaml")
+    if args.live:
+        config.setdefault("broker", {})["paper"] = False
+    elif args.paper:
+        config.setdefault("broker", {})["paper"] = True
+
     symbols = config.get("universe", {}).get("symbols", ["SPY"])
     broker = AlpacaBroker(config)
 

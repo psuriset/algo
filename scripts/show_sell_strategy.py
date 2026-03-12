@@ -6,6 +6,7 @@ For every position: entry price/date, stop-loss level, take-profit level,
 time-based exit (bars held vs exit-after), and kill-switch conditions.
 Optionally fetches current price to show distance to stop/target and unrealized P&L.
 """
+import argparse
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -31,8 +32,21 @@ def _format_date(entry_time_iso: str | None) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Sell strategy and timeline per position")
+    parser.add_argument("--live", action="store_true", help="Live account")
+    parser.add_argument("--paper", action="store_true", help="Paper account (default)")
+    args = parser.parse_args()
+    if args.live and args.paper:
+        parser.error("Use only one of --live or --paper")
+
     config = load_config(PROJECT_ROOT / "config" / "default.yaml")
+    if args.live:
+        config.setdefault("broker", {})["paper"] = False
+    elif args.paper:
+        config.setdefault("broker", {})["paper"] = True
+
     broker = AlpacaBroker(config)
+    mode = "LIVE" if not broker.paper else "paper"
     strategy = TrendFollowingStrategy(config)
     tracker_path = PROJECT_ROOT / "data" / "positions_tracked.json"
     tracked = load(tracker_path)
@@ -43,14 +57,16 @@ def main() -> None:
         return
 
     stop_pct_default = strategy.stop_loss_pct
-    take_pct = strategy.take_profit_pct
+    partial_pct = strategy.partial_take_profit_pct
+    partial_ratio = strategy.partial_exit_ratio
+    trail_pct = strategy.trailing_stop_pct
     time_bars = strategy.time_bars_exit
     ks_spread = strategy.kill_switch_max_spread_pct
     ks_atr = strategy.kill_switch_max_atr_multiple
 
-    print("Sell strategy and timeline (from config + position tracker)")
+    print(f"Sell strategy and timeline  [{mode}]")
     print("=" * 70)
-    print(f"Strategy defaults: stop {stop_pct_default}% | take-profit {take_pct}% | time exit after {time_bars} bars | kill-switch: spread > {ks_spread}% or ATR multiple > {ks_atr}")
+    print(f"Strategy: stop {stop_pct_default}% | partial {partial_pct}% (sell {int(partial_ratio*100)}%) | trail rest {trail_pct}% | time exit {time_bars} bars | kill-switch: spread > {ks_spread}% or ATR > {ks_atr}")
     print()
 
     for p in positions:
@@ -67,17 +83,23 @@ def main() -> None:
 
         bars = bars_held(entry_time_iso) if entry_time_iso else None
         stop_price = entry_price * (1 - stop_pct / 100.0)
-        target_price = entry_price * (1 + (take_pct or 0) / 100.0) if take_pct else None
+        partial_price = entry_price * (1 + partial_pct / 100.0)
+        partial_taken = info.get("partial_taken", False)
+        trail_high = info.get("trail_high")
 
         current_price = (market_value / qty) if qty else entry_price
         ret_pct = (current_price - entry_price) / entry_price * 100 if entry_price else 0
         dist_stop_pct = (current_price - stop_price) / current_price * 100 if current_price and stop_price else 0
-        dist_target_pct = (target_price - current_price) / current_price * 100 if (target_price and current_price) else None
+        dist_partial_pct = (partial_price - current_price) / current_price * 100 if (current_price and partial_price) else None
 
-        print(f"  {symbol}  qty={qty}  entry=${entry_price:.2f}  entry_date={_format_date(entry_time_iso)}")
+        print(f"  {symbol}  qty={qty}  entry=${entry_price:.2f}  entry_date={_format_date(entry_time_iso)}" + ("  [partial taken]" if partial_taken else ""))
         print(f"    Stop-loss:    ${stop_price:.2f}  ({stop_pct}% below entry)  —  current ~{dist_stop_pct:+.1f}% above stop")
-        if target_price:
-            print(f"    Take-profit:  ${target_price:.2f}  ({take_pct}% above entry)  —  current ~{dist_target_pct:+.1f}% below target" if dist_target_pct is not None else f"    Take-profit:  ${target_price:.2f}  ({take_pct}% above entry)")
+        if not partial_taken:
+            print(f"    Partial:      ${partial_price:.2f}  (sell {int(partial_ratio*100)}% at +{partial_pct}%)" + (f"  —  ~{dist_partial_pct:+.1f}% to partial" if dist_partial_pct is not None else ""))
+        else:
+            th = float(trail_high) if trail_high is not None else current_price
+            trail_stop = th * (1 - trail_pct / 100.0)
+            print(f"    Trailing:     high ${th:.2f}  →  sell rest if price ≤ ${trail_stop:.2f}  ({trail_pct}% below high)")
         if bars is not None:
             time_line = f"    Time exit:    bar {bars} of {time_bars}  (exit after {time_bars} bars)" + (f"  →  {time_bars - bars} bars left" if bars < time_bars else "  →  would exit on next check")
         else:

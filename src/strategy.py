@@ -23,6 +23,8 @@ class StrategyType(Enum):
 class ExitReason(Enum):
     STOP_LOSS = "stop_loss"
     TAKE_PROFIT = "take_profit"
+    PARTIAL_TAKE_PROFIT = "partial_take_profit"
+    TRAILING_STOP = "trailing_stop"
     TIME_BARS = "time_bars"
     KILL_SWITCH = "kill_switch"
     SIGNAL_EXIT = "signal_exit"
@@ -87,13 +89,18 @@ class TrendFollowingStrategy:
         if self.player_focus == PlayerFocus.RETAIL:
             self.ma_fast = retail_ma_fast
             self.ma_slow = retail_ma_slow
+        self.entry_mode = (tf.get("entry_mode") or "momentum").strip().lower()
         self.pullback_touch_ma_fast = bool(tf.get("pullback_touch_ma_fast", True))
+        self.pullback_tolerance_pct = float(tf.get("pullback_tolerance_pct", 0.5))  # default 0.5%
         self.atr_period = int(tf.get("volatility_filter_atr_period", 14))
         self.max_atr_pct_for_entry = float(tf.get("max_atr_pct_for_entry", 2.0))
 
-        self.stop_loss_pct = float(exits.get("stop_loss_pct", 1.5))
-        self.take_profit_pct = float(exits.get("take_profit_pct", 3.0)) or None
-        self.time_bars_exit = int(exits.get("time_bars_exit", 20))
+        self.stop_loss_pct = float(exits.get("stop_loss_pct", 1.0))
+        self.take_profit_pct = float(exits.get("take_profit_pct", 0)) or None
+        self.partial_take_profit_pct = float(exits.get("partial_take_profit_pct", 2.0))
+        self.partial_exit_ratio = float(exits.get("partial_exit_ratio", 0.5))
+        self.trailing_stop_pct = float(exits.get("trailing_stop_pct", 1.0))
+        self.time_bars_exit = int(exits.get("time_bars_exit", 10))
         if self.player_focus == PlayerFocus.RETAIL:
             self.time_bars_exit = retail_time_bars
         ks = exits.get("kill_switch", {})
@@ -133,12 +140,17 @@ class TrendFollowingStrategy:
         ma_f = ma_fast.iloc[-1]
         ma_s = ma_slow.iloc[-1]
 
-        # Uptrend: price > 200D MA
-        if price <= ma_s:
+        # Uptrend: price above slow MA
+        if price <= ma_s or ma_s <= 0:
             return None
-        # Pullback: price at or near 20D MA (e.g. within 0.5% or touch)
-        if self.pullback_touch_ma_fast and abs(price - ma_f) / ma_f > 0.005:
-            return None
+        # Entry mode: momentum = just above both MAs; pullback = price must be near fast MA
+        if self.entry_mode == "momentum":
+            if price <= ma_f or ma_f <= 0:
+                return None
+        else:
+            tol = self.pullback_tolerance_pct / 100.0
+            if self.pullback_touch_ma_fast and (ma_f <= 0 or abs(price - ma_f) / ma_f > tol):
+                return None
 
         # Kill-switch: don't enter if spread/volatility already bad
         if spread_pct is not None and spread_pct > self.kill_switch_max_spread_pct:
@@ -164,7 +176,7 @@ class TrendFollowingStrategy:
             side="long",
             strength=1.0,
             stop_pct=self.stop_loss_pct,
-            take_profit_pct=self.take_profit_pct,
+            take_profit_pct=self.partial_take_profit_pct or self.take_profit_pct,
             time_bars_exit=self.time_bars_exit,
             metadata={"ma_fast": ma_f, "ma_slow": ma_s, "atr_pct": atr_pct.iloc[-1]},
         )
@@ -177,18 +189,38 @@ class TrendFollowingStrategy:
         bars_held: int,
         spread_pct: float | None = None,
         atr_multiple: float | None = None,
+        *,
+        partial_taken: bool = False,
+        trail_high: float | None = None,
+        current_qty: int = 0,
     ) -> ExitSignal | None:
-        """Check for stop, target, time, or kill-switch exit."""
+        """Check for stop, partial at 2%, trailing stop on remainder, time, or kill-switch."""
         ret_pct = (current_price - entry_price) / entry_price * 100
 
         if ret_pct <= -self.stop_loss_pct:
             return ExitSignal(symbol=symbol, reason=ExitReason.STOP_LOSS, metadata={"ret_pct": ret_pct})
-        if self.take_profit_pct and ret_pct >= self.take_profit_pct:
-            return ExitSignal(symbol=symbol, reason=ExitReason.TAKE_PROFIT, metadata={"ret_pct": ret_pct})
         if bars_held >= self.time_bars_exit:
             return ExitSignal(symbol=symbol, reason=ExitReason.TIME_BARS, metadata={"bars_held": bars_held})
         if spread_pct is not None and spread_pct > self.kill_switch_max_spread_pct:
             return ExitSignal(symbol=symbol, reason=ExitReason.KILL_SWITCH, metadata={"spread_pct": spread_pct})
         if atr_multiple is not None and atr_multiple > self.kill_switch_max_atr_multiple:
             return ExitSignal(symbol=symbol, reason=ExitReason.KILL_SWITCH, metadata={"atr_multiple": atr_multiple})
+
+        if not partial_taken and ret_pct >= self.partial_take_profit_pct and current_qty > 0:
+            qty_to_sell = max(1, int(current_qty * self.partial_exit_ratio))
+            if qty_to_sell < current_qty:
+                return ExitSignal(
+                    symbol=symbol,
+                    reason=ExitReason.PARTIAL_TAKE_PROFIT,
+                    metadata={"ret_pct": ret_pct, "qty_to_sell": qty_to_sell},
+                )
+        if partial_taken and current_qty > 0 and trail_high is not None:
+            high = max(trail_high, current_price)
+            threshold = high * (1 - self.trailing_stop_pct / 100.0)
+            if current_price <= threshold:
+                return ExitSignal(
+                    symbol=symbol,
+                    reason=ExitReason.TRAILING_STOP,
+                    metadata={"ret_pct": ret_pct, "trail_high": high},
+                )
         return None

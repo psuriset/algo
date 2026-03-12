@@ -4,7 +4,9 @@ Run the trading engine in a loop until market close (no user interaction).
 
 Checks for entry signals every N minutes during regular session; stops when
 market closes or daily loss limit / safe mode is hit.
+CLI: --live or --paper to override config.
 """
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -19,18 +21,35 @@ from src.trading_engine import TradingEngine
 from src.brokers.alpaca_client import AlpacaBroker
 from src.strategy import _atr
 from src.universe import MarketCalendar, SessionType
-from src.position_tracker import load as load_tracked, add as add_tracked, remove as remove_tracked, bars_held
+from src.position_tracker import load as load_tracked, add as add_tracked, remove as remove_tracked, update as update_tracked, bars_held
+from src.strategy import ExitReason
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run trading loop until market close")
+    parser.add_argument("--live", action="store_true", help="Use live account (real money)")
+    parser.add_argument("--paper", action="store_true", help="Use paper account (default)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Print why each symbol is skipped (no trade)")
+    args = parser.parse_args()
+    if args.live and args.paper:
+        parser.error("Use only one of --live or --paper")
+    verbose = getattr(args, "verbose", False)
+
     config_path = PROJECT_ROOT / "config" / "default.yaml"
     config = load_config(config_path)
+    if args.live:
+        config.setdefault("broker", {})["paper"] = False
+    elif args.paper:
+        config.setdefault("broker", {})["paper"] = True
+
     broker_cfg = config.get("broker", {})
     if broker_cfg.get("firm") != "alpaca":
         print("Config broker.firm is not 'alpaca'. Exiting.")
         sys.exit(1)
 
     broker = AlpacaBroker(config)
+    mode = "PAPER" if broker.paper else "LIVE (real money)"
+    print("Broker mode:", mode)
     engine = TradingEngine(config=config)
     calendar = MarketCalendar(config)
     et = pytz.timezone("America/New_York")
@@ -51,6 +70,8 @@ def main() -> None:
             time.sleep(interval_sec)
             continue
 
+        print(dt.strftime("%H:%M ET"), "— in session, fetching account...")
+        sys.stdout.flush()
         account_equity = broker.get_equity()
         engine.update_equity(account_equity)
         engine.state.pdt.equity = account_equity
@@ -78,6 +99,10 @@ def main() -> None:
         sector_exposure_pct = {}
         symbols = config.get("universe", {}).get("symbols", ["SPY"])
 
+        # Heartbeat: so you see the loop is running even when no trades
+        print(dt.strftime("%H:%M ET"), "— equity $%.0f, checking %d symbols..." % (account_equity, len(symbols)))
+        sys.stdout.flush()
+
         # ----- Sell decisions: check exit rules for each tracked position -----
         for symbol in list(tracked.keys()):
             pos = tracked[symbol]
@@ -97,6 +122,13 @@ def main() -> None:
                     continue
                 entry_time_iso = pos.get("entry_time", "")
                 bars = bars_held(entry_time_iso, dt)
+                partial_taken = bool(pos.get("partial_taken", False))
+                trail_high_val = pos.get("trail_high")
+                trail_high_f = float(trail_high_val) if trail_high_val is not None else None
+                if partial_taken:
+                    new_high = max(trail_high_f or entry_price, quote.mid)
+                    update_tracked(tracker_path, symbol, trail_high=new_high)
+                    trail_high_f = new_high
                 atr_multiple = None
                 if symbol in symbols:
                     try:
@@ -106,21 +138,47 @@ def main() -> None:
                             atr_multiple = (atr.iloc[-1] / df["close"].iloc[-1]) * 100
                     except Exception:
                         pass
-                exit_signal = engine.check_exit(symbol, entry_price, quote.mid, bars, quote.spread_pct, atr_multiple)
+                exit_signal = engine.check_exit(
+                    symbol,
+                    entry_price,
+                    quote.mid,
+                    bars,
+                    quote.spread_pct,
+                    atr_multiple,
+                    partial_taken=partial_taken,
+                    trail_high=trail_high_f,
+                    current_qty=qty,
+                )
                 if exit_signal:
-                    sell_order = engine.execution.build_order(symbol, "sell", qty, quote.mid, quote.spread_pct)
-                    if sell_order:
-                        broker.submit_order(sell_order)
-                        print(dt.strftime("%H:%M ET"), symbol, "SELL", qty, "shares —", exit_signal.reason.value)
-                    remove_tracked(tracker_path, symbol)
+                    if exit_signal.reason == ExitReason.PARTIAL_TAKE_PROFIT:
+                        qty_to_sell = exit_signal.metadata.get("qty_to_sell", max(1, qty // 2))
+                        sell_order = engine.execution.build_order(symbol, "sell", qty_to_sell, quote.mid, quote.spread_pct)
+                        if sell_order:
+                            broker.submit_order(sell_order)
+                            print(dt.strftime("%H:%M ET"), symbol, "SELL", qty_to_sell, "shares (partial @ 2%) —", exit_signal.reason.value)
+                        remaining = qty - qty_to_sell
+                        if remaining <= 0:
+                            remove_tracked(tracker_path, symbol)
+                        else:
+                            update_tracked(tracker_path, symbol, qty=remaining, partial_taken=True, trail_high=quote.mid)
+                    else:
+                        sell_order = engine.execution.build_order(symbol, "sell", qty, quote.mid, quote.spread_pct)
+                        if sell_order:
+                            broker.submit_order(sell_order)
+                            print(dt.strftime("%H:%M ET"), symbol, "SELL", qty, "shares —", exit_signal.reason.value)
+                        remove_tracked(tracker_path, symbol)
             except Exception as e:
                 print(dt.strftime("%H:%M ET"), symbol, "exit check skip —", type(e).__name__, str(e)[:60])
                 continue
 
+        if verbose:
+            print(dt.strftime("%H:%M ET"), "Entry check: equity $%.0f, positions %d" % (account_equity, len(positions)))
         for symbol in symbols:
             try:
                 df = broker.get_bars(symbol, timeframe="1Day", limit=220)
                 if df.empty or len(df) < 200:
+                    if verbose:
+                        print("  %s: skip — not enough bars (got %d, need 200)" % (symbol, len(df) if not df.empty else 0))
                     continue
                 quote = broker.get_latest_quote(symbol)
                 spread_pct = quote.spread_pct if quote else 0.15
@@ -152,12 +210,15 @@ def main() -> None:
                     add_tracked(tracker_path, symbol, qty_bought, entry_price, stop_pct)
                     print(dt.strftime("%H:%M ET"), symbol, "BUY", qty_bought, "shares", getattr(order, "id", ""))
                     current_positions[symbol] = {"notional": notional, "stop_pct": stop_pct}
-                elif decision.reason != "no entry signal":
-                    pass
+                else:
+                    if verbose:
+                        print("  %s: %s" % (symbol, decision.reason or "no entry signal"))
             except Exception as e:
                 print(dt.strftime("%H:%M ET"), symbol, "skip —", type(e).__name__, str(e)[:80])
                 continue
 
+        print(dt.strftime("%H:%M ET"), "— no new entries. Next check in", interval_sec // 60, "min")
+        sys.stdout.flush()
         time.sleep(interval_sec)
 
 

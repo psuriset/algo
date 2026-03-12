@@ -6,6 +6,7 @@ Usage:
   python scripts/show_daily_summary.py           # today
   python scripts/show_daily_summary.py 2025-02-19   # specific date
 """
+import argparse
 import sys
 from pathlib import Path
 from datetime import date, datetime
@@ -19,9 +20,17 @@ from src.brokers.alpaca_client import AlpacaBroker
 
 
 def main() -> None:
-    if len(sys.argv) >= 2:
+    parser = argparse.ArgumentParser(description="Daily summary (trades, positions, equity)")
+    parser.add_argument("date", nargs="?", help="YYYY-MM-DD (default: today)")
+    parser.add_argument("--live", action="store_true", help="Live account")
+    parser.add_argument("--paper", action="store_true", help="Paper account (default)")
+    args = parser.parse_args()
+    if args.live and args.paper:
+        parser.error("Use only one of --live or --paper")
+
+    if args.date:
         try:
-            trade_date = date.fromisoformat(sys.argv[1])
+            trade_date = date.fromisoformat(args.date)
         except ValueError:
             print("Use date as YYYY-MM-DD, e.g. 2025-02-19")
             sys.exit(1)
@@ -30,7 +39,13 @@ def main() -> None:
         trade_date = datetime.now(et).date()
 
     config = load_config(PROJECT_ROOT / "config" / "default.yaml")
+    if args.live:
+        config.setdefault("broker", {})["paper"] = False
+    elif args.paper:
+        config.setdefault("broker", {})["paper"] = True
+
     broker = AlpacaBroker(config)
+    mode = "LIVE" if not broker.paper else "paper"
 
     equity = broker.get_equity()
     positions = broker.get_positions()
@@ -39,7 +54,7 @@ def main() -> None:
     # ----- print summary -----
     print()
     print("=" * 55)
-    print(f"  DAILY SUMMARY — {trade_date}")
+    print(f"  DAILY SUMMARY — {trade_date}  [{mode}]")
     print("=" * 55)
     print()
     print(f"  Account equity (now)    ${equity:>12,.2f}")

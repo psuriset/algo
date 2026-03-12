@@ -202,7 +202,19 @@ class TradingEngine:
         bars_held: int,
         spread_pct: float | None = None,
         atr_multiple: float | None = None,
+        *,
+        partial_taken: bool = False,
+        trail_high: float | None = None,
+        current_qty: int = 0,
     ) -> ExitSignal | None:
         return self.strategy.check_exit(
-            symbol, entry_price, current_price, bars_held, spread_pct, atr_multiple
+            symbol,
+            entry_price,
+            current_price,
+            bars_held,
+            spread_pct,
+            atr_multiple,
+            partial_taken=partial_taken,
+            trail_high=trail_high,
+            current_qty=current_qty,
         )

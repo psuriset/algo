@@ -87,12 +87,13 @@ pip install -r requirements.txt
 The app is configured for **Alpaca** as the broker. In `config/default.yaml`:
 
 - `broker.firm: alpaca`
-- `broker.paper: true` (use `false` for live)
+- `broker.paper: true` — paper trading (default). Set to `false` for **live** (real money).
+- Override without editing config: **CLI** `--live` or `--paper` (e.g. `python scripts/run_alpaca.py --live`), or **env** `APCA_PAPER=false` / `ALPACA_LIVE=true` for live.
 
 Set environment variables (never commit keys):
 
-- `APCA_API_KEY_ID` – Alpaca API key
-- `APCA_API_SECRET_KEY` – Alpaca secret key
+- **Paper:** `APCA_API_KEY_ID`, `APCA_API_SECRET_KEY` (from Alpaca dashboard → Paper Trading → API Keys)
+- **Live:** `ALPACA_LIVE_API_KEY_ID`, `ALPACA_LIVE_API_SECRET_KEY` (from Alpaca dashboard → Live → API Keys). Alpaca uses **separate** key pairs for paper vs live; using paper keys with `--live` causes 401 Unauthorized.
 
 Paper base URL is used automatically when `paper: true`. Then run:
 
@@ -101,6 +102,10 @@ python scripts/run_alpaca.py
 ```
 
 This uses your Alpaca account (paper or live) for equity and positions, fetches daily bars and latest quote for the first universe symbol, runs all entry gates, and submits the order to Alpaca if allowed.
+
+**Nothing trading on live?** Run the loop with **`--verbose`** to see why each symbol is skipped:  
+`python scripts/run_alpaca_loop.py --live --verbose`  
+Common reasons: market closed (only 9:30–16:00 ET); "no entry signal" (strategy needs price above 200D MA + pullback to 20D MA, so many days no symbol qualifies); or another gate (spread, risk, PDT). One-shot run prints the reason: `python scripts/run_alpaca.py --live`.
 
 ## Run Example (no broker)
 

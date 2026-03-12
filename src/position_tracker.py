@@ -27,14 +27,45 @@ def save(data: dict[str, dict[str, Any]], base_path: Path | None = None) -> None
         json.dump(data, f, indent=2)
 
 
-def add(base_path: Path | None, symbol: str, qty: int, entry_price: float, stop_pct: float) -> None:
+def add(
+    base_path: Path | None,
+    symbol: str,
+    qty: int,
+    entry_price: float,
+    stop_pct: float,
+    partial_taken: bool = False,
+    trail_high: float | None = None,
+) -> None:
     data = load(base_path)
     data[symbol.upper()] = {
         "qty": qty,
         "entry_price": entry_price,
         "entry_time": datetime.now(timezone.utc).isoformat(),
         "stop_pct": stop_pct,
+        "partial_taken": partial_taken,
+        "trail_high": float(trail_high) if trail_high is not None else None,
     }
+    save(data, base_path)
+
+
+def update(
+    base_path: Path | None,
+    symbol: str,
+    qty: int | None = None,
+    partial_taken: bool | None = None,
+    trail_high: float | None = None,
+) -> None:
+    """Update one or more fields for an existing position."""
+    data = load(base_path)
+    key = symbol.upper()
+    if key not in data:
+        return
+    if qty is not None:
+        data[key]["qty"] = qty
+    if partial_taken is not None:
+        data[key]["partial_taken"] = partial_taken
+    if trail_high is not None:
+        data[key]["trail_high"] = trail_high
     save(data, base_path)
 
 

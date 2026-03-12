@@ -11,18 +11,39 @@ universe:
     - QQQ
     - IWM
     - DIA
-    - NVDA
-    - AAPL
-    - MSFT
-    - AMZN
-    - GOOGL
-    - META
+    - COIN
+    - RIVN
+    - SOFI
+    - UPST
+    - MARA
+    - TLT
+    - GLD
+    - VIXY
+    - HYG
+    - XLF
+    - XLE
+    - XLV
+    - XLI
+    - XLY
+    - XLK
+    - JPM
+    - BAC
+    - GS
+    - MS
     - TSLA
-    - AVGO
     - AMD
     - NFLX
-    - JPM
+    - AVGO
+    - PLTR
+    - SMCI
+    - AAPL
+    - MSFT
+    - NVDA
+    - META
+    - AMZN
+    - GOOGL
     - BRK.B
+    - SNOW
   # Minimum liquidity / volume filters
   min_avg_dollar_volume_30d: 50_000_000
   min_atr_multiple_for_volume: 0.5   # min volume vs ATR-based expectation
@@ -81,6 +102,27 @@ trade_filters:
       NFLX: []
       JPM: []
       BRK.B: []
+      BAC: []
+      SMCI: []
+      COIN: []
+      PLTR: []
+      SNOW: []
+      XLF: []
+      XLE: []
+      XLV: []
+      XLI: []
+      XLY: []
+      TLT: []
+      GLD: []
+      VIXY: []
+      RIVN: []
+      SOFI: []
+      UPST: []
+      MARA: []
+      HYG: []
+      XLK: []
+      GS: []
+      MS: []
 
   # Volatility/spread-based "do not trade" (stricter than market_quality)
   volatility_do_not_trade:
@@ -93,8 +135,8 @@ trade_filters:
 # ---------------------------------------------------------------------------
 strategy:
   type: trend_following   # trend_following | mean_reversion | breakout
-  # Adopt style by player type: institutional | retail | neutral
-  player_focus: neutral   # institutional = follow big volume/size; retail = faster, shorter horizon
+  # Adopt style: retail = more signals (50/10 MA). neutral = strict (200/20 MA). institutional = volume filter.
+  player_focus: retail   # retail = shorter horizon, more entries; neutral = fewer, longer-term
   # Institutional: only trade when volume >= N x 20d avg (proxy for institutional activity)
   institutional:
     min_volume_ratio_vs_avg: 1.2   # e.g. 1.2 = 20% above average volume
@@ -108,15 +150,20 @@ strategy:
     enabled: false
     patterns: [ "bullish_engulfing", "hammer" ]   # or "doji"; leave empty to allow any
   trend_following:
+    # entry_mode: momentum = buy when price above both MAs (more signals). pullback = buy only on dip to fast MA (fewer).
+    entry_mode: momentum
     ma_fast: 20
     ma_slow: 200
     pullback_touch_ma_fast: true
+    pullback_tolerance_pct: 2.0   # used only when entry_mode: pullback
     volatility_filter_atr_period: 14
     max_atr_pct_for_entry: 2.0   # skip if ATR% > this (too volatile)
   exits:
-    stop_loss_pct: 1.5
-    take_profit_pct: 3.0
-    time_bars_exit: 20
+    stop_loss_pct: 1.0
+    partial_take_profit_pct: 2.0   # take partial at this % gain
+    partial_exit_ratio: 0.5         # sell this fraction (e.g. 0.5 = 50%) at partial target
+    trailing_stop_pct: 1.0          # trail remainder by this % below high
+    time_bars_exit: 10
     kill_switch:
       max_spread_pct: 0.25
       max_atr_multiple: 3.0
@@ -127,7 +174,7 @@ strategy:
 position_sizing:
   risk_per_trade_pct: 0.5      # 0.25 - 1.0
   max_open_risk_pct: 3.0       # sum of stop distances cap (2-5%)
-  max_exposure_per_symbol_pct: 20.0
+  max_exposure_per_symbol_pct: 40.0   # max % of account in any single position
   max_exposure_per_sector_pct: 40.0
   # Position sizing reduction during high volatility regimes
   high_vol_reduction:
@@ -163,6 +210,8 @@ execution:
 # ---------------------------------------------------------------------------
 broker:
   firm: alpaca
+  # paper: true  = paper trading (no real money).  paper: false  = LIVE (real money).
+  # Override without editing file: APCA_PAPER=false or ALPACA_LIVE=true for live; APCA_PAPER=true for paper.
   paper: true
   # Run continuously until market close (no user interaction):
   #   python run_alpaca_loop.py
@@ -173,10 +222,10 @@ broker:
   # api_retry_delay_sec: 3.0
   # data_feed: iex   # free. Use "sip" only if you have a paid data subscription.
   # API keys from environment (never put real keys in this file):
-  #   export APCA_API_KEY_ID=your_key
-  #   export APCA_API_SECRET_KEY=your_secret
-  # Paper base URL (default): https://paper-api.alpaca.markets
-  # Live base URL: https://api.alpaca.markets
+  #   Paper: APCA_API_KEY_ID, APCA_API_SECRET_KEY  (from Alpaca Paper Trading → API Keys)
+  #   Live:  ALPACA_LIVE_API_KEY_ID, ALPACA_LIVE_API_SECRET_KEY  (from Alpaca Live → API Keys; Alpaca uses separate keys for live)
+  #   Or set APCA_* to live keys when running --live (then use paper keys only when running --paper).
+  # Paper base URL: https://paper-api.alpaca.markets   Live: https://api.alpaca.markets
 
 # ---------------------------------------------------------------------------
 # 6) Compliance (PDT, etc.)

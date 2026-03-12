@@ -47,13 +47,27 @@ class AlpacaBroker:
             raise RuntimeError("alpaca-py is required for Alpaca broker. Install: pip install alpaca-py")
         self.config = config or {}
         broker_cfg = self.config.get("broker", {})
-        self.paper = broker_cfg.get("paper", True)
-        api_key = _env("APCA_API_KEY_ID") or broker_cfg.get("api_key")
-        secret = _env("APCA_API_SECRET_KEY") or broker_cfg.get("secret_key")
+        # Paper vs live: config default, overridable by env APCA_PAPER or ALPACA_LIVE
+        paper_cfg = broker_cfg.get("paper", True)
+        apca_paper = _env("APCA_PAPER")
+        alpaca_live = _env("ALPACA_LIVE")
+        if apca_paper is not None:
+            self.paper = str(apca_paper).strip().lower() in ("true", "1", "yes")
+        elif alpaca_live is not None:
+            self.paper = not (str(alpaca_live).strip().lower() in ("true", "1", "yes"))
+        else:
+            self.paper = paper_cfg
+        # Live and paper use different Alpaca API keys. For live, prefer ALPACA_LIVE_* if set.
+        if self.paper:
+            api_key = _env("APCA_API_KEY_ID") or broker_cfg.get("api_key")
+            secret = _env("APCA_API_SECRET_KEY") or broker_cfg.get("secret_key")
+        else:
+            api_key = _env("ALPACA_LIVE_API_KEY_ID") or _env("APCA_API_KEY_ID") or broker_cfg.get("api_key")
+            secret = _env("ALPACA_LIVE_API_SECRET_KEY") or _env("APCA_API_SECRET_KEY") or broker_cfg.get("secret_key")
         if not api_key or not secret:
             raise ValueError(
-                "Alpaca credentials required. Set APCA_API_KEY_ID and APCA_API_SECRET_KEY "
-                "or broker.api_key / broker.secret_key in config."
+                "Alpaca credentials required. Set APCA_API_KEY_ID and APCA_API_SECRET_KEY (paper). "
+                "For live, set ALPACA_LIVE_API_KEY_ID and ALPACA_LIVE_API_SECRET_KEY (Alpaca uses separate keys for live)."
             )
         self._trading = TradingClient(api_key, secret, paper=self.paper)
         self._data = StockHistoricalDataClient(api_key, secret)

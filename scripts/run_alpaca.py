@@ -4,7 +4,9 @@ Run the trading engine with Alpaca as broker.
 
 Uses config broker section (broker.firm: alpaca, broker.paper).
 Environment: APCA_API_KEY_ID, APCA_API_SECRET_KEY.
+CLI: --live or --paper to override config.
 """
+import argparse
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -20,14 +22,27 @@ from src.strategy import _atr
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run trading engine once with Alpaca")
+    parser.add_argument("--live", action="store_true", help="Use live account (real money)")
+    parser.add_argument("--paper", action="store_true", help="Use paper account (default)")
+    args = parser.parse_args()
+    if args.live and args.paper:
+        parser.error("Use only one of --live or --paper")
+
     config_path = PROJECT_ROOT / "config" / "default.yaml"
     config = load_config(config_path)
+    if args.live:
+        config.setdefault("broker", {})["paper"] = False
+    elif args.paper:
+        config.setdefault("broker", {})["paper"] = True
+
     broker_cfg = config.get("broker", {})
     if broker_cfg.get("firm") != "alpaca":
         print("Config broker.firm is not 'alpaca'. Set broker.firm: alpaca and broker.paper: true|false.")
         sys.exit(1)
 
     broker = AlpacaBroker(config)
+    print("Broker mode:", "PAPER" if broker.paper else "LIVE (real money)")
     engine = TradingEngine(config=config)
 
     account_equity = broker.get_equity()
