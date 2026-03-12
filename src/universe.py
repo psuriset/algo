@@ -123,7 +123,8 @@ class MarketQualityGate:
     Uses ATR% (not ATR multiple). Spread threshold is tiered: core_liquid vs high_vol."""
     def __init__(self, config: dict[str, Any]):
         mq = config.get("market_quality", {})
-        self.max_spread_pct = float(mq.get("max_spread_pct", 0.10))
+        # Default 0.5% — 0.10% is too strict for IEX / intraday
+        self.max_spread_pct = float(mq.get("max_spread_pct", 0.5))
         self.min_volume_atr_ratio = float(mq.get("min_volume_atr_ratio", 1.0))
         self.block_on_news_spike = bool(mq.get("block_on_news_spike", True))
         # Threshold is ATR% (e.g. 2.0 = block when daily ATR% >= 2%)

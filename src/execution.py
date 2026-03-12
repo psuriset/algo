@@ -50,7 +50,8 @@ class ExecutionManager:
         ex = config.get("execution", {})
         self.prefer_limit_orders = bool(ex.get("prefer_limit_orders", True))
         self.limit_order_offset_ticks = int(ex.get("limit_order_offset_ticks", 1))
-        self.max_spread_pct_to_trade = float(ex.get("max_spread_pct_to_trade", 0.10))
+        # Default 1.0% — 0.10% is too strict for IEX / many names
+        self.max_spread_pct_to_trade = float(ex.get("max_spread_pct_to_trade", 1.0))
         self.partial_fill_timeout_seconds = int(ex.get("partial_fill_timeout_seconds", 30))
         self.cancel_replace_on_partial = bool(ex.get("cancel_replace_on_partial", True))
         self.max_slippage_bps = float(ex.get("max_slippage_bps", 10))

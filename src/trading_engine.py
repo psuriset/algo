@@ -202,19 +202,20 @@ class TradingEngine:
         current_price: float,
         bars_held: int,
         spread_pct: float | None = None,
-        atr_multiple: float | None = None,
+        atr_pct: float | None = None,
         *,
         partial_taken: bool = False,
         trail_high: float | None = None,
         current_qty: int = 0,
     ) -> ExitSignal | None:
+        """atr_pct must be ATR% = (ATR/close)*100, not a ratio or multiple."""
         return self.strategy.check_exit(
             symbol,
             entry_price,
             current_price,
             bars_held,
             spread_pct,
-            atr_multiple,
+            atr_pct,
             partial_taken=partial_taken,
             trail_high=trail_high,
             current_qty=current_qty,

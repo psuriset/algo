@@ -65,8 +65,8 @@ market_sessions:
     trade_allowed: false   # wider spreads
 
 market_quality:
-  # Core liquid (SPY, QQQ, mega-caps): tighter spread. High-vol names use high_vol_max_spread_pct.
-  max_spread_pct: 0.25    # core liquid: allow up to 0.25% (IEX can be wider than SIP)
+  # Core liquid: tighter spread. High-vol names use high_vol_max_spread_pct. (0.10% blocks almost everything on IEX.)
+  max_spread_pct: 0.5     # core liquid: allow up to 0.5%
   min_volume_atr_ratio: 1.0
   block_on_news_spike: true
   news_volatility_spike_atr_pct: 8.0   # block only when ATR% >= this (volatility spike)
@@ -141,7 +141,7 @@ trade_filters:
   volatility_do_not_trade:
     enabled: true
     max_atr_pct: 5.0        # do not trade if 14d ATR% > this
-    max_spread_pct: 0.25    # core liquid: max spread %
+    max_spread_pct: 0.5    # core liquid: max spread %
     high_vol_symbols:      # same as market_quality; wider spread for these
       - COIN
       - RIVN
@@ -187,8 +187,8 @@ strategy:
     trailing_stop_pct: 1.0          # trail remainder by this % below high
     time_bars_exit: 10
     kill_switch:
-      max_spread_pct: 0.25
-      max_atr_multiple: 3.0
+      max_spread_pct: 0.5
+      max_atr_pct: 3.0   # exit if ATR% > this (was max_atr_multiple; same scale: percent)
 
 # ---------------------------------------------------------------------------
 # 3) Position Sizing
@@ -221,7 +221,7 @@ portfolio_risk:
 execution:
   prefer_limit_orders: true
   limit_order_offset_ticks: 1
-  max_spread_pct_to_trade: 1.0   # allow same as market_quality (0.1% was blocking all)
+  max_spread_pct_to_trade: 1.0   # must be >= widest tier; 0.10% blocks almost everything on IEX
   partial_fill_timeout_seconds: 30
   cancel_replace_on_partial: true
   max_slippage_bps: 10

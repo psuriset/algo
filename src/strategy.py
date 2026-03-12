@@ -105,7 +105,10 @@ class TrendFollowingStrategy:
             self.time_bars_exit = retail_time_bars
         ks = exits.get("kill_switch", {})
         self.kill_switch_max_spread_pct = float(ks.get("max_spread_pct", 0.25))
-        self.kill_switch_max_atr_multiple = float(ks.get("max_atr_multiple", 3.0))
+        # Kill-switch uses ATR% = (ATR/close)*100; config in percent (e.g. 3.0 = 3%)
+        self.kill_switch_max_atr_pct = float(
+            ks.get("max_atr_pct") or ks.get("max_atr_multiple", 3.0)
+        )
 
         cf = strat.get("candlestick_filter", {})
         self.candlestick_enabled = bool(cf.get("enabled", False))
@@ -122,9 +125,10 @@ class TrendFollowingStrategy:
         symbol: str,
         df: pd.DataFrame,
         spread_pct: float | None = None,
-        atr_multiple_now: float | None = None,
+        atr_pct_now: float | None = None,
     ) -> EntrySignal | None:
-        """Generate entry only when trend + pullback + volatility filter pass."""
+        """Generate entry only when trend + pullback + volatility filter pass.
+        atr_pct_now must be ATR% = (ATR/close)*100."""
         if df is None or len(df) < self.ma_slow:
             return None
 
@@ -152,10 +156,10 @@ class TrendFollowingStrategy:
             if self.pullback_touch_ma_fast and (ma_f <= 0 or abs(price - ma_f) / ma_f > tol):
                 return None
 
-        # Kill-switch: don't enter if spread/volatility already bad
+        # Kill-switch: don't enter if spread/volatility already bad (atr_pct_now is ATR%)
         if spread_pct is not None and spread_pct > self.kill_switch_max_spread_pct:
             return None
-        if atr_multiple_now is not None and atr_multiple_now > self.kill_switch_max_atr_multiple:
+        if atr_pct_now is not None and atr_pct_now > self.kill_switch_max_atr_pct:
             return None
 
         # Institutional: only enter when volume is elevated (proxy for institutional activity)
@@ -188,13 +192,14 @@ class TrendFollowingStrategy:
         current_price: float,
         bars_held: int,
         spread_pct: float | None = None,
-        atr_multiple: float | None = None,
+        atr_pct: float | None = None,
         *,
         partial_taken: bool = False,
         trail_high: float | None = None,
         current_qty: int = 0,
     ) -> ExitSignal | None:
-        """Check for stop, partial at 2%, trailing stop on remainder, time, or kill-switch."""
+        """Check for stop, partial at 2%, trailing stop on remainder, time, or kill-switch.
+        atr_pct must be ATR% = (ATR/close)*100."""
         ret_pct = (current_price - entry_price) / entry_price * 100
 
         if ret_pct <= -self.stop_loss_pct:
@@ -203,8 +208,8 @@ class TrendFollowingStrategy:
             return ExitSignal(symbol=symbol, reason=ExitReason.TIME_BARS, metadata={"bars_held": bars_held})
         if spread_pct is not None and spread_pct > self.kill_switch_max_spread_pct:
             return ExitSignal(symbol=symbol, reason=ExitReason.KILL_SWITCH, metadata={"spread_pct": spread_pct})
-        if atr_multiple is not None and atr_multiple > self.kill_switch_max_atr_multiple:
-            return ExitSignal(symbol=symbol, reason=ExitReason.KILL_SWITCH, metadata={"atr_multiple": atr_multiple})
+        if atr_pct is not None and atr_pct > self.kill_switch_max_atr_pct:
+            return ExitSignal(symbol=symbol, reason=ExitReason.KILL_SWITCH, metadata={"atr_pct": atr_pct})
 
         if not partial_taken and ret_pct >= self.partial_take_profit_pct and current_qty > 0:
             qty_to_sell = max(1, int(current_qty * self.partial_exit_ratio))

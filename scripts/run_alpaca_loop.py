@@ -129,13 +129,14 @@ def main() -> None:
                     new_high = max(trail_high_f or entry_price, quote.mid)
                     update_tracked(tracker_path, symbol, trail_high=new_high)
                     trail_high_f = new_high
-                atr_multiple = None
+                # ATR% = (ATR/close)*100 for kill-switch (same unit as config max_atr_pct)
+                atr_pct_exit = None
                 if symbol in symbols:
                     try:
                         df = broker.get_bars(symbol, timeframe="1Day", limit=20)
                         if not df.empty and len(df) >= 14:
                             atr = _atr(df["high"], df["low"], df["close"], 14)
-                            atr_multiple = (atr.iloc[-1] / df["close"].iloc[-1]) * 100
+                            atr_pct_exit = (atr.iloc[-1] / df["close"].iloc[-1]) * 100
                     except Exception:
                         pass
                 exit_signal = engine.check_exit(
@@ -144,7 +145,7 @@ def main() -> None:
                     quote.mid,
                     bars,
                     quote.spread_pct,
-                    atr_multiple,
+                    atr_pct_exit,
                     partial_taken=partial_taken,
                     trail_high=trail_high_f,
                     current_qty=qty,

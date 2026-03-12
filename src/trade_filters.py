@@ -103,8 +103,9 @@ class VolatilityDoNotTrade:
         tf = config.get("trade_filters", {})
         vd = tf.get("volatility_do_not_trade", {})
         self.enabled = bool(vd.get("enabled", True))
-        self.max_atr_pct = float(vd.get("max_atr_pct", 2.5))
-        self.max_spread_pct = float(vd.get("max_spread_pct", 0.15))
+        self.max_atr_pct = float(vd.get("max_atr_pct", 5.0))
+        # Default 0.5% for core; 0.10/0.15% is too strict for IEX
+        self.max_spread_pct = float(vd.get("max_spread_pct", 0.5))
         high_vol = vd.get("high_vol_symbols") or []
         self.high_vol_symbols = {s.upper().strip() for s in high_vol if s}
         self.high_vol_max_spread_pct = float(vd.get("high_vol_max_spread_pct", 1.0))

@@ -62,11 +62,11 @@ def main() -> None:
     trail_pct = strategy.trailing_stop_pct
     time_bars = strategy.time_bars_exit
     ks_spread = strategy.kill_switch_max_spread_pct
-    ks_atr = strategy.kill_switch_max_atr_multiple
+    ks_atr_pct = strategy.kill_switch_max_atr_pct
 
     print(f"Sell strategy and timeline  [{mode}]")
     print("=" * 70)
-    print(f"Strategy: stop {stop_pct_default}% | partial {partial_pct}% (sell {int(partial_ratio*100)}%) | trail rest {trail_pct}% | time exit {time_bars} bars | kill-switch: spread > {ks_spread}% or ATR > {ks_atr}")
+    print(f"Strategy: stop {stop_pct_default}% | partial {partial_pct}% (sell {int(partial_ratio*100)}%) | trail rest {trail_pct}% | time exit {time_bars} bars | kill-switch: spread > {ks_spread}% or ATR% > {ks_atr_pct}%")
     print()
 
     for p in positions:
