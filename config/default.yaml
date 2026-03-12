@@ -5,7 +5,9 @@
 # 1) Universe & Data
 # ---------------------------------------------------------------------------
 universe:
-  # High-liquidity symbols (S&P 500 / top-volume ETFs)
+  # Full tradeable list. Spread thresholds are tiered in market_quality:
+  #   core liquid (SPY, QQQ, IWM, AAPL, MSFT, NVDA, AMZN, META, GOOGL, etc.): tighter max_spread_pct
+  #   high_vol (COIN, RIVN, SOFI, UPST, MARA, SMCI, SNOW): high_vol_max_spread_pct (wider)
   symbols:
     - SPY
     - QQQ
@@ -63,10 +65,21 @@ market_sessions:
     trade_allowed: false   # wider spreads
 
 market_quality:
-  max_spread_pct: 0.10      # 0.10% = no trade if spread > this
+  # Core liquid (SPY, QQQ, mega-caps): tighter spread. High-vol names use high_vol_max_spread_pct.
+  max_spread_pct: 0.25    # core liquid: allow up to 0.25% (IEX can be wider than SIP)
   min_volume_atr_ratio: 1.0
   block_on_news_spike: true
-  news_volatility_spike_atr_multiple: 2.0
+  news_volatility_spike_atr_pct: 8.0   # block only when ATR% >= this (volatility spike)
+  # High-vol bucket: wider spread allowed (IEX/thin names: COIN, RIVN, MARA, etc.)
+  high_vol_symbols:
+    - COIN
+    - RIVN
+    - SOFI
+    - UPST
+    - MARA
+    - SMCI
+    - SNOW
+  high_vol_max_spread_pct: 1.0   # e.g. 1% for high-beta / thinner names
 
 # US market holidays / half-days (sample; extend per year)
 holidays: []   # populated at runtime or from calendar
@@ -124,11 +137,20 @@ trade_filters:
       GS: []
       MS: []
 
-  # Volatility/spread-based "do not trade" (stricter than market_quality)
+  # Volatility/spread-based "do not trade" (uses real ATR%, tiered spread)
   volatility_do_not_trade:
     enabled: true
-    max_atr_pct: 2.5        # do not trade if 14d ATR% > this
-    max_spread_pct: 0.15    # do not trade if spread > this %
+    max_atr_pct: 5.0        # do not trade if 14d ATR% > this
+    max_spread_pct: 0.25    # core liquid: max spread %
+    high_vol_symbols:      # same as market_quality; wider spread for these
+      - COIN
+      - RIVN
+      - SOFI
+      - UPST
+      - MARA
+      - SMCI
+      - SNOW
+    high_vol_max_spread_pct: 1.0
 
 # ---------------------------------------------------------------------------
 # 2) Strategy (Trend-following as default)
@@ -199,7 +221,7 @@ portfolio_risk:
 execution:
   prefer_limit_orders: true
   limit_order_offset_ticks: 1
-  max_spread_pct_to_trade: 0.10
+  max_spread_pct_to_trade: 1.0   # allow same as market_quality (0.1% was blocking all)
   partial_fill_timeout_seconds: 30
   cancel_replace_on_partial: true
   max_slippage_bps: 10

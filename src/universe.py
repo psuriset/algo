@@ -119,25 +119,38 @@ class UniverseFilter:
 
 
 class MarketQualityGate:
-    """Gate every trade on spread %, min volume/ATR, optional news/volatility spike."""
-
+    """Gate every trade on spread %, min volume/ATR, optional news/volatility spike.
+    Uses ATR% (not ATR multiple). Spread threshold is tiered: core_liquid vs high_vol."""
     def __init__(self, config: dict[str, Any]):
         mq = config.get("market_quality", {})
         self.max_spread_pct = float(mq.get("max_spread_pct", 0.10))
         self.min_volume_atr_ratio = float(mq.get("min_volume_atr_ratio", 1.0))
         self.block_on_news_spike = bool(mq.get("block_on_news_spike", True))
-        self.news_volatility_spike_atr_multiple = float(mq.get("news_volatility_spike_atr_multiple", 2.0))
+        # Threshold is ATR% (e.g. 2.0 = block when daily ATR% >= 2%)
+        self.news_volatility_spike_atr_pct = float(
+            mq.get("news_volatility_spike_atr_pct") or mq.get("news_volatility_spike_atr_multiple", 2.0)
+        )
+        high_vol = mq.get("high_vol_symbols") or []
+        self.high_vol_symbols = {s.upper().strip() for s in high_vol if s}
+        self.high_vol_max_spread_pct = float(mq.get("high_vol_max_spread_pct", 1.0))
+
+    def _max_spread_for_symbol(self, symbol: str | None) -> float:
+        if symbol and self.high_vol_symbols and symbol.upper() in self.high_vol_symbols:
+            return self.high_vol_max_spread_pct
+        return self.max_spread_pct
 
     def check(
         self,
+        symbol: str | None = None,
         spread_pct: float | None = None,
         volume_atr_ratio: float | None = None,
-        current_atr_multiple: float | None = None,
+        current_atr_pct: float | None = None,
     ) -> MarketQualityResult:
-        if spread_pct is not None and spread_pct > self.max_spread_pct:
+        max_spread = self._max_spread_for_symbol(symbol)
+        if spread_pct is not None and spread_pct > max_spread:
             return MarketQualityResult(
                 ok=False,
-                reason=f"spread {spread_pct:.4f}% > max {self.max_spread_pct}%",
+                reason=f"spread {spread_pct:.4f}% > max {max_spread}%",
                 spread_pct=spread_pct,
             )
         if volume_atr_ratio is not None and volume_atr_ratio < self.min_volume_atr_ratio:
@@ -148,12 +161,12 @@ class MarketQualityGate:
             )
         if (
             self.block_on_news_spike
-            and current_atr_multiple is not None
-            and current_atr_multiple >= self.news_volatility_spike_atr_multiple
+            and current_atr_pct is not None
+            and current_atr_pct >= self.news_volatility_spike_atr_pct
         ):
             return MarketQualityResult(
                 ok=False,
-                reason=f"volatility spike: ATR multiple {current_atr_multiple:.2f}",
+                reason=f"volatility spike: ATR% {current_atr_pct:.2f} >= {self.news_volatility_spike_atr_pct}%",
                 volatility_spike=True,
             )
         return MarketQualityResult(ok=True, reason="ok")

@@ -96,7 +96,8 @@ class EarningsBlackout:
 
 
 class VolatilityDoNotTrade:
-    """Do not trade when volatility (ATR%) or spread exceeds thresholds."""
+    """Do not trade when volatility (ATR%) or spread exceeds thresholds.
+    Uses real ATR% (not ATR multiple). Spread threshold is tiered: core vs high_vol."""
 
     def __init__(self, config: dict[str, Any]):
         tf = config.get("trade_filters", {})
@@ -104,16 +105,26 @@ class VolatilityDoNotTrade:
         self.enabled = bool(vd.get("enabled", True))
         self.max_atr_pct = float(vd.get("max_atr_pct", 2.5))
         self.max_spread_pct = float(vd.get("max_spread_pct", 0.15))
+        high_vol = vd.get("high_vol_symbols") or []
+        self.high_vol_symbols = {s.upper().strip() for s in high_vol if s}
+        self.high_vol_max_spread_pct = float(vd.get("high_vol_max_spread_pct", 1.0))
+
+    def _max_spread_for_symbol(self, symbol: str | None) -> float:
+        if symbol and self.high_vol_symbols and symbol.upper() in self.high_vol_symbols:
+            return self.high_vol_max_spread_pct
+        return self.max_spread_pct
 
     def check(
         self,
         atr_pct: float | None = None,
         spread_pct: float | None = None,
+        symbol: str | None = None,
     ) -> FilterResult:
         if not self.enabled:
             return FilterResult(allowed=True, reason="ok")
         if atr_pct is not None and atr_pct > self.max_atr_pct:
             return FilterResult(allowed=False, reason=f"volatility DNT: ATR% {atr_pct:.2f} > {self.max_atr_pct}")
-        if spread_pct is not None and spread_pct > self.max_spread_pct:
-            return FilterResult(allowed=False, reason=f"volatility DNT: spread {spread_pct:.2f}% > {self.max_spread_pct}")
+        max_spread = self._max_spread_for_symbol(symbol)
+        if spread_pct is not None and spread_pct > max_spread:
+            return FilterResult(allowed=False, reason=f"volatility DNT: spread {spread_pct:.2f}% > {max_spread}")
         return FilterResult(allowed=True, reason="ok")

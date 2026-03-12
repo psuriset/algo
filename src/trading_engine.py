@@ -76,7 +76,7 @@ class TradingEngine:
         # Market data for quality & strategy
         spread_pct: float,
         volume_atr_ratio: float | None = None,
-        atr_multiple: float | None = None,
+        atr_pct: float | None = None,
         ohlcv_df: Any = None,
         symbol_sector: dict[str, str] | None = None,
     ) -> TradeDecision:
@@ -101,9 +101,10 @@ class TradingEngine:
             return TradeDecision(allowed=False, reason=earnings.reason)
 
         mq = self.market_quality.check(
+            symbol=symbol,
             spread_pct=spread_pct,
             volume_atr_ratio=volume_atr_ratio,
-            current_atr_multiple=atr_multiple,
+            current_atr_pct=atr_pct,
         )
         if not mq.ok:
             return TradeDecision(allowed=False, reason=f"market_quality: {mq.reason}")
@@ -112,7 +113,7 @@ class TradingEngine:
         if not allowed:
             return TradeDecision(allowed=False, reason=reason)
 
-        vol_dnt = self.volatility_dnt.check(atr_pct=atr_multiple, spread_pct=spread_pct)
+        vol_dnt = self.volatility_dnt.check(atr_pct=atr_pct, spread_pct=spread_pct, symbol=symbol)
         if not vol_dnt.allowed:
             return TradeDecision(allowed=False, reason=vol_dnt.reason)
 
@@ -135,7 +136,7 @@ class TradingEngine:
         if not can_dt:
             return TradeDecision(allowed=False, reason=reason)
 
-        entry = self.strategy.generate_entry(symbol, ohlcv_df, spread_pct, atr_multiple)
+        entry = self.strategy.generate_entry(symbol, ohlcv_df, spread_pct, atr_pct)
         if entry is None:
             return TradeDecision(allowed=False, reason="no entry signal")
 
@@ -153,7 +154,7 @@ class TradingEngine:
             current_positions=current_positions,
             sector_exposure_pct=sector_exposure_pct,
             symbol_sector=symbol_sector,
-            atr_pct=atr_multiple,
+            atr_pct=atr_pct,
         )
         if sizing.reject_reason:
             return TradeDecision(

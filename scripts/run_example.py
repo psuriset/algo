@@ -59,7 +59,7 @@ def main() -> None:
         sector_exposure_pct={"Technology": 0.0},
         spread_pct=spread_pct,
         volume_atr_ratio=volume_atr_ratio,
-        atr_multiple=1.0,
+        atr_pct=1.0,
         ohlcv_df=df,
         symbol_sector={symbol: "Technology"},
     )

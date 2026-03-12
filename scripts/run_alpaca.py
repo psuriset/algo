@@ -75,7 +75,7 @@ def main() -> None:
         sector_exposure_pct=sector_exposure_pct,
         spread_pct=spread_pct,
         volume_atr_ratio=volume_atr_ratio,
-        atr_multiple=atr_pct / 1.0 if atr_pct else None,
+        atr_pct=atr_pct,
         ohlcv_df=df,
         symbol_sector=None,
     )
