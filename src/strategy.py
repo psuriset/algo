@@ -96,9 +96,11 @@ class TrendFollowingStrategy:
         self.max_atr_pct_for_entry = float(tf.get("max_atr_pct_for_entry", 2.0))
 
         self.stop_loss_pct = float(exits.get("stop_loss_pct", 1.0))
-        self.take_profit_pct = float(exits.get("take_profit_pct", 0)) or None
+        tp = exits.get("take_profit_pct")
+        self.take_profit_pct = float(tp) if tp is not None and tp != "" else None
         self.partial_take_profit_pct = float(exits.get("partial_take_profit_pct", 2.0))
         self.partial_exit_ratio = float(exits.get("partial_exit_ratio", 0.5))
+        self.use_trailing_stop = bool(exits.get("use_trailing_stop", True))
         self.trailing_stop_pct = float(exits.get("trailing_stop_pct", 1.0))
         self.time_bars_exit = int(exits.get("time_bars_exit", 10))
         if self.player_focus == PlayerFocus.RETAIL:
@@ -219,7 +221,7 @@ class TrendFollowingStrategy:
                     reason=ExitReason.PARTIAL_TAKE_PROFIT,
                     metadata={"ret_pct": ret_pct, "qty_to_sell": qty_to_sell},
                 )
-        if partial_taken and current_qty > 0 and trail_high is not None:
+        if self.use_trailing_stop and partial_taken and current_qty > 0 and trail_high is not None:
             high = max(trail_high, current_price)
             threshold = high * (1 - self.trailing_stop_pct / 100.0)
             if current_price <= threshold:

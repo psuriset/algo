@@ -206,11 +206,22 @@ def main() -> None:
                         print(dt.strftime("%H:%M ET"), "— regime skip:", type(e).__name__, str(e)[:50])
             if verbose:
                 print(dt.strftime("%H:%M ET"), "Entry check: equity $%.0f, positions %d" % (account_equity, len(positions)))
+            # Symbols that already have an open (pending) order — do not place another
+            open_orders = broker.get_open_orders()
+            open_order_symbols = {o.get("symbol", "").upper() for o in (open_orders or []) if o.get("symbol")}
             for symbol in symbols:
-                # Skip symbols we already have a position in (no pyramiding / no repeat buys every 5 min)
+                # Skip if any of: existing position, open order, or tracked local state
                 if symbol in current_positions:
                     if verbose:
                         print("  %s: skip — already have position" % symbol)
+                    continue
+                if symbol.upper() in open_order_symbols:
+                    if verbose:
+                        print("  %s: skip — open order exists" % symbol)
+                    continue
+                if symbol.upper() in tracked:
+                    if verbose:
+                        print("  %s: skip — in tracked state" % symbol)
                     continue
                 try:
                     df = broker.get_bars(symbol, timeframe="1Day", limit=220)

@@ -175,11 +175,13 @@ strategy:
     volatility_filter_atr_period: 14
     max_atr_pct_for_entry: 3.0   # allow noisier names for proof-of-life
   exits:
-    stop_loss_pct: 1.0
-    partial_take_profit_pct: 2.0   # take partial at this % gain
+    stop_loss_pct: 1.5
+    take_profit_pct: null           # no fixed full exit; use partial + trailing
+    use_trailing_stop: true
+    trailing_stop_pct: 3.0          # trail remainder by this % below high
+    partial_take_profit_pct: 2.0    # take partial at this % gain
     partial_exit_ratio: 0.5         # sell this fraction (e.g. 0.5 = 50%) at partial target
-    trailing_stop_pct: 1.0          # trail remainder by this % below high
-    time_bars_exit: 10
+    time_bars_exit: 25              # exit after 25 bars (20-30 range)
     kill_switch:
       max_spread_pct: 0.5
       max_atr_pct: 3.0   # exit if ATR% > this (was max_atr_multiple; same scale: percent)

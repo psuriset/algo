@@ -2,6 +2,14 @@
 
 A rule-based algorithmic trading application that enforces **universe & data**, **entry/exit**, **position sizing**, **portfolio & drawdown**, **execution**, and **compliance** rules before any trade.
 
+## Priority order (implementation order)
+
+1. **Open-order lock** — Before placing a new order for a symbol, skip if that symbol already has an open (pending) order. *(run_alpaca_loop + broker.get_open_orders)*
+2. **Long-only enforcement** — Reject short signals; map long → buy for execution. No sell-short. *(trading_engine)*
+3. **10-minute entry loop** — Exits every 5 min; new entry checks every 10 min. *(config: entry_check_interval_minutes)*
+4. **Trailing exit for winners** — After partial take-profit, trail the remainder by configurable % (e.g. 3%). *(strategy: use_trailing_stop, trailing_stop_pct)*
+5. **Turtle hybrid logic** — Add only after 1–4 are solid and stable.
+
 ## Rules Implemented
 
 ### 1) Universe & Data

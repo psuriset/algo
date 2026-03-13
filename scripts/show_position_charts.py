@@ -28,6 +28,25 @@ from src.brokers.alpaca_client import AlpacaBroker
 from src.position_tracker import load as load_tracked
 
 
+def _ensure_datetime_index(df: pd.DataFrame) -> pd.DataFrame:
+    """If index is MultiIndex (e.g. symbol, timestamp), use the timestamp level so we don't pass symbol to date2num."""
+    if df.empty:
+        return df
+    idx = df.index
+    if isinstance(idx, pd.MultiIndex):
+        # Timestamp is usually the last level; first level can be symbol (e.g. "JD")
+        for level in range(idx.nlevels - 1, -1, -1):
+            lev = idx.get_level_values(level)
+            try:
+                pd.to_datetime(lev[:1])
+                df = df.copy()
+                df.index = pd.to_datetime(lev)
+                break
+            except (TypeError, ValueError):
+                continue
+    return df
+
+
 def _candlestick(ax, df: pd.DataFrame, bar_width: float = 0.6) -> None:
     """Draw candlesticks on axes. df must have open, high, low, close and a datetime index."""
     if df.empty or len(df) < 1:
@@ -110,6 +129,7 @@ def main() -> None:
             ax.text(0.5, 0.5, "No bar data", ha="center", va="center", transform=ax.transAxes)
             continue
 
+        df = _ensure_datetime_index(df)
         df = df.sort_index()
         _candlestick(ax, df)
         ax.axhline(y=entry_price, color="blue", linestyle="--", linewidth=1.5, label=f"Entry ${entry_price:.2f}")
@@ -117,7 +137,12 @@ def main() -> None:
         ax.set_ylabel("Price")
         ax.legend(loc="upper left", fontsize=8)
         ax.grid(True, alpha=0.3)
-        ax.set_xlim(mdates.date2num([df.index.min(), df.index.max()]))
+        try:
+            dt_min = pd.to_datetime(df.index.min())
+            dt_max = pd.to_datetime(df.index.max())
+            ax.set_xlim(mdates.date2num([dt_min, dt_max]))
+        except (TypeError, ValueError):
+            pass
 
     for j in range(n, len(axes)):
         axes[j].set_visible(False)

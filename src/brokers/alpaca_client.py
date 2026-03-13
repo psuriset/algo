@@ -216,6 +216,20 @@ class AlpacaBroker:
             return self._trading.close_all_positions(cancel_orders=cancel_orders) or []
         return self._with_retry(_close)
 
+    def get_open_orders(self) -> list[dict[str, Any]]:
+        """Return all open (pending) orders. Used to avoid placing a second order for the same symbol."""
+        req = GetOrdersRequest(status="open", limit=500)
+        orders = self._with_retry(lambda: self._trading.get_orders(req))
+        out = []
+        for o in orders or []:
+            out.append({
+                "id": str(getattr(o, "id", "")),
+                "symbol": getattr(o, "symbol", ""),
+                "side": str(getattr(o, "side", "")),
+                "qty": int(float(getattr(o, "qty", 0) or 0)),
+            })
+        return out
+
     def get_orders_for_date(self, trade_date: "datetime | date") -> list[dict[str, Any]]:
         """Return orders (filled or closed) that were submitted on the given date (ET)."""
         from datetime import date as date_type
