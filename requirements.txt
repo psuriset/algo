@@ -10,5 +10,8 @@ alpaca-py>=0.14.0
 # Config
 pyyaml>=6.0
 
+# Charts (for show_position_charts.py)
+matplotlib>=3.7.0
+
 # Testing (optional)
 # pytest>=7.0.0

@@ -105,7 +105,7 @@ def main() -> None:
         else:
             time_line = f"    Time exit:    after {time_bars} bars  (entry date unknown; not in tracker)"
         print(time_line)
-        print(f"    Kill-switch:  sell if spread > {ks_spread}% or ATR multiple > {ks_atr}")
+        print(f"    Kill-switch:  sell if spread > {ks_spread}% or ATR% > {ks_atr_pct}%")
         print(f"    Unrealized P&L: ${unrealized_pl:+,.2f}  ({ret_pct:+.2f}%)")
         print()
 

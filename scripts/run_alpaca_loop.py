@@ -7,6 +7,7 @@ market closes or daily loss limit / safe mode is hit.
 CLI: --live or --paper to override config.
 """
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ from src.strategy import _atr
 from src.universe import MarketCalendar, SessionType
 from src.position_tracker import load as load_tracked, add as add_tracked, remove as remove_tracked, update as update_tracked, bars_held
 from src.strategy import ExitReason
+from src.market_regime import MarketRegimeScorer
 
 
 def main() -> None:
@@ -34,6 +36,8 @@ def main() -> None:
     if args.live and args.paper:
         parser.error("Use only one of --live or --paper")
     verbose = getattr(args, "verbose", False)
+    if verbose:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     config_path = PROJECT_ROOT / "config" / "default.yaml"
     config = load_config(config_path)
@@ -52,11 +56,16 @@ def main() -> None:
     print("Broker mode:", mode)
     engine = TradingEngine(config=config)
     calendar = MarketCalendar(config)
+    regime_scorer = MarketRegimeScorer(config)
     et = pytz.timezone("America/New_York")
-    interval_sec = int(broker_cfg.get("check_interval_minutes", 5)) * 60
+    exit_interval_min = int(broker_cfg.get("exit_check_interval_minutes") or broker_cfg.get("check_interval_minutes", 5))
+    entry_interval_min = int(broker_cfg.get("entry_check_interval_minutes", 10))
+    exit_interval_sec = exit_interval_min * 60
+    entry_interval_sec = entry_interval_min * 60
     tracker_path = PROJECT_ROOT / "data" / "positions_tracked.json"
+    last_entry_check_time = None
 
-    print("Running until market close (regular session). Check every", interval_sec // 60, "min. Ctrl+C to stop.")
+    print("Running until market close. Exits every %d min, entries every %d min. Ctrl+C to stop." % (exit_interval_min, entry_interval_min))
     print("-" * 50)
 
     while True:
@@ -67,7 +76,7 @@ def main() -> None:
                 print(dt.strftime("%Y-%m-%d %H:%M ET"), "Market closed. Stopping.")
                 break
             print(dt.strftime("%Y-%m-%d %H:%M ET"), "Outside regular hours. Sleeping until next check.")
-            time.sleep(interval_sec)
+            time.sleep(exit_interval_sec)
             continue
 
         print(dt.strftime("%H:%M ET"), "— in session, fetching account...")
@@ -172,55 +181,90 @@ def main() -> None:
                 print(dt.strftime("%H:%M ET"), symbol, "exit check skip —", type(e).__name__, str(e)[:60])
                 continue
 
-        if verbose:
-            print(dt.strftime("%H:%M ET"), "Entry check: equity $%.0f, positions %d" % (account_equity, len(positions)))
-        for symbol in symbols:
-            try:
-                df = broker.get_bars(symbol, timeframe="1Day", limit=220)
-                if df.empty or len(df) < 200:
+        # Entry checks run every entry_interval_min (e.g. 10 min); exits run every cycle (5 min)
+        now_sec = time.time()
+        do_entry_check = last_entry_check_time is None or (now_sec - last_entry_check_time) >= entry_interval_sec
+        if do_entry_check:
+            last_entry_check_time = now_sec
+
+        if do_entry_check:
+            # Market regime: fetch SPY/QQQ/VIX/HYG/TLT bars and compute score -> position size multiplier
+            regime_multiplier = None
+            if regime_scorer.enabled:
+                try:
+                    regime_bars = {}
+                    for sym in regime_scorer.required_symbols():
+                        b = broker.get_bars(sym, timeframe="1Day", limit=60)
+                        if not b.empty and len(b) >= regime_scorer.ma_period_trend:
+                            regime_bars[sym] = b
+                    if regime_bars:
+                        regime_result = regime_scorer.compute(regime_bars)
+                        regime_multiplier = regime_result.size_multiplier
+                        print(dt.strftime("%H:%M ET"), "— regime score %d (%s), size mult %.2f" % (regime_result.score, regime_result.condition, regime_multiplier))
+                except Exception as e:
                     if verbose:
-                        print("  %s: skip — not enough bars (got %d, need 200)" % (symbol, len(df) if not df.empty else 0))
+                        print(dt.strftime("%H:%M ET"), "— regime skip:", type(e).__name__, str(e)[:50])
+            if verbose:
+                print(dt.strftime("%H:%M ET"), "Entry check: equity $%.0f, positions %d" % (account_equity, len(positions)))
+            for symbol in symbols:
+                # Skip symbols we already have a position in (no pyramiding / no repeat buys every 5 min)
+                if symbol in current_positions:
+                    if verbose:
+                        print("  %s: skip — already have position" % symbol)
                     continue
-                quote = broker.get_latest_quote(symbol)
-                spread_pct = quote.spread_pct if quote else 0.15
-                atr = _atr(df["high"], df["low"], df["close"], 14)
-                atr_pct = (atr.iloc[-1] / df["close"].iloc[-1]) * 100 if len(atr) else None
-
-                decision = engine.run_entry_gates(
-                    symbol=symbol,
-                    dt=dt,
-                    account_equity=account_equity,
-                    current_positions=current_positions,
-                    sector_exposure_pct=sector_exposure_pct,
-                    spread_pct=spread_pct,
-                    volume_atr_ratio=1.5,
-                    atr_pct=atr_pct,
-                    ohlcv_df=df,
-                    symbol_sector=None,
-                )
-                if decision.allowed and decision.order_request:
-                    notional = (decision.position_sizing.notional if decision.position_sizing else 0) or 0
-                    buying_power = broker.get_buying_power()
-                    if notional > buying_power:
-                        print(dt.strftime("%H:%M ET"), symbol, "skip — insufficient buying power (need $%.0f, have $%.0f)" % (notional, buying_power))
+                try:
+                    df = broker.get_bars(symbol, timeframe="1Day", limit=220)
+                    if df.empty or len(df) < 200:
+                        if verbose:
+                            print("  %s: skip — not enough bars (got %d, need 200)" % (symbol, len(df) if not df.empty else 0))
                         continue
-                    order = broker.submit_order(decision.order_request)
-                    qty_bought = decision.position_sizing.shares if decision.position_sizing else 0
-                    entry_price = float(df["close"].iloc[-1]) if not df.empty else quote.mid
-                    stop_pct = decision.entry_signal.stop_pct if decision.entry_signal else 1.5
-                    add_tracked(tracker_path, symbol, qty_bought, entry_price, stop_pct)
-                    print(dt.strftime("%H:%M ET"), symbol, "BUY", qty_bought, "shares", getattr(order, "id", ""))
-                    current_positions[symbol] = {"notional": notional, "stop_pct": stop_pct}
-                else:
-                    if verbose:
-                        print("  %s: %s" % (symbol, decision.reason or "no entry signal"))
-            except Exception as e:
-                print(dt.strftime("%H:%M ET"), symbol, "skip —", type(e).__name__, str(e)[:80])
-                continue
+                    quote = broker.get_latest_quote(symbol)
+                    spread_pct = quote.spread_pct if quote else 0.15
+                    atr = _atr(df["high"], df["low"], df["close"], 14)
+                    atr_pct = (atr.iloc[-1] / df["close"].iloc[-1]) * 100 if len(atr) else None
 
-        print(dt.strftime("%H:%M ET"), "— no new entries. Next check in", interval_sec // 60, "min")
+                    decision = engine.run_entry_gates(
+                        symbol=symbol,
+                        dt=dt,
+                        account_equity=account_equity,
+                        current_positions=current_positions,
+                        sector_exposure_pct=sector_exposure_pct,
+                        spread_pct=spread_pct,
+                        volume_atr_ratio=1.5,
+                        atr_pct=atr_pct,
+                        ohlcv_df=df,
+                        symbol_sector=None,
+                        log_strategy_context=verbose,
+                        regime_size_multiplier=regime_multiplier,
+                    )
+                    if decision.allowed and decision.order_request:
+                        notional = (decision.position_sizing.notional if decision.position_sizing else 0) or 0
+                        buying_power = broker.get_buying_power()
+                        if notional > buying_power:
+                            print(dt.strftime("%H:%M ET"), symbol, "skip — insufficient buying power (need $%.0f, have $%.0f)" % (notional, buying_power))
+                            continue
+                        order = broker.submit_order(decision.order_request)
+                        qty_bought = decision.position_sizing.shares if decision.position_sizing else 0
+                        entry_price = float(df["close"].iloc[-1]) if not df.empty else quote.mid
+                        stop_pct = decision.entry_signal.stop_pct if decision.entry_signal else 1.5
+                        add_tracked(tracker_path, symbol, qty_bought, entry_price, stop_pct)
+                        print(dt.strftime("%H:%M ET"), symbol, "BUY", qty_bought, "shares", getattr(order, "id", ""))
+                        current_positions[symbol] = {"notional": notional, "stop_pct": stop_pct}
+                    else:
+                        if verbose:
+                            print("  %s: %s" % (symbol, decision.reason or "no entry signal"))
+                except Exception as e:
+                    print(dt.strftime("%H:%M ET"), symbol, "skip —", type(e).__name__, str(e)[:80])
+                    continue
+
+        elapsed = int(now_sec - last_entry_check_time) // 60 if last_entry_check_time else 0
+        next_entry_min = max(0, entry_interval_min - elapsed)
+        if do_entry_check:
+            print(dt.strftime("%H:%M ET"), "— exits every %d min, next entry check in %d min" % (exit_interval_min, entry_interval_min))
+        else:
+            print(dt.strftime("%H:%M ET"), "— next exit in %d min, entry check in %d min" % (exit_interval_min, next_entry_min))
         sys.stdout.flush()
-        time.sleep(interval_sec)
+        time.sleep(exit_interval_sec)
 
 
 if __name__ == "__main__":

@@ -40,6 +40,7 @@ class PositionSizer:
         sector_exposure_pct: dict[str, float],
         symbol_sector: dict[str, str] | None = None,
         atr_pct: float | None = None,
+        regime_size_multiplier: float | None = None,
     ) -> PositionSizingResult:
         """
         Compute shares so that risk = risk_per_trade_pct of account.
@@ -103,6 +104,13 @@ class PositionSizer:
             and atr_pct > self.high_vol_atr_threshold
         ):
             shares = max(1, int(shares * self.high_vol_size_multiplier))
+            notional = shares * price
+            risk_amount = shares * risk_per_share
+            risk_pct = (risk_amount / account_equity) * 100.0
+
+        # Market regime: scale size by regime (bullish/neutral/defensive)
+        if regime_size_multiplier is not None and regime_size_multiplier > 0:
+            shares = max(1, int(shares * regime_size_multiplier))
             notional = shares * price
             risk_amount = shares * risk_per_share
             risk_pct = (risk_amount / account_equity) * 100.0

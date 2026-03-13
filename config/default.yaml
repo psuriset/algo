@@ -2,50 +2,29 @@
 # Override via environment or config file per environment.
 
 # ---------------------------------------------------------------------------
-# 1) Universe & Data
+# 1) Universe & Data (3 groups: regime = detect only; bot trades sector + targets)
 # ---------------------------------------------------------------------------
+# Market Regime (detect only; not traded): SPY, QQQ, TLT, HYG, VIXY → see market_regime.symbols
+# Sector Rotation (traded): XLF, XLK, XLE
+# Trade Targets (traded): AAPL, MSFT, NVDA, AMZN, META, GOOGL, AMD, TSLA, BABA, JD, PDD
 universe:
-  # Full tradeable list. Spread thresholds are tiered in market_quality:
-  #   core liquid (SPY, QQQ, IWM, AAPL, MSFT, NVDA, AMZN, META, GOOGL, etc.): tighter max_spread_pct
-  #   high_vol (COIN, RIVN, SOFI, UPST, MARA, SMCI, SNOW): high_vol_max_spread_pct (wider)
-  symbols:
-    - SPY
-    - QQQ
-    - IWM
-    - DIA
-    - COIN
-    - RIVN
-    - SOFI
-    - UPST
-    - MARA
-    - TLT
-    - GLD
-    - VIXY
-    - HYG
+  symbols:   # = Sector Rotation + Trade Targets (regime symbols used only for score)
+    # Sector Rotation
     - XLF
-    - XLE
-    - XLV
-    - XLI
-    - XLY
     - XLK
-    - JPM
-    - BAC
-    - GS
-    - MS
-    - TSLA
-    - AMD
-    - NFLX
-    - AVGO
-    - PLTR
-    - SMCI
+    - XLE
+    # Trade Targets
     - AAPL
     - MSFT
     - NVDA
-    - META
     - AMZN
+    - META
     - GOOGL
-    - BRK.B
-    - SNOW
+    - AMD
+    - TSLA
+    - BABA
+    - JD
+    - PDD
   # Minimum liquidity / volume filters
   min_avg_dollar_volume_30d: 50_000_000
   min_atr_multiple_for_volume: 0.5   # min volume vs ATR-based expectation
@@ -79,7 +58,12 @@ market_quality:
     - MARA
     - SMCI
     - SNOW
-  high_vol_max_spread_pct: 1.0   # e.g. 1% for high-beta / thinner names
+    - FXI
+    - KWEB
+    - BABA
+    - JD
+    - PDD
+  high_vol_max_spread_pct: 1.5   # temporarily loosened for proof-of-life (core stays 0.5%)
 
 # US market holidays / half-days (sample; extend per year)
 holidays: []   # populated at runtime or from calendar
@@ -136,11 +120,16 @@ trade_filters:
       XLK: []
       GS: []
       MS: []
+      FXI: []
+      KWEB: []
+      BABA: []
+      JD: []
+      PDD: []
 
   # Volatility/spread-based "do not trade" (uses real ATR%, tiered spread)
   volatility_do_not_trade:
     enabled: true
-    max_atr_pct: 5.0        # do not trade if 14d ATR% > this
+    max_atr_pct: 6.0        # temporarily loosened for proof-of-life
     max_spread_pct: 0.5    # core liquid: max spread %
     high_vol_symbols:      # same as market_quality; wider spread for these
       - COIN
@@ -150,6 +139,11 @@ trade_filters:
       - MARA
       - SMCI
       - SNOW
+      - FXI
+      - KWEB
+      - BABA
+      - JD
+      - PDD
     high_vol_max_spread_pct: 1.0
 
 # ---------------------------------------------------------------------------
@@ -172,14 +166,14 @@ strategy:
     enabled: false
     patterns: [ "bullish_engulfing", "hammer" ]   # or "doji"; leave empty to allow any
   trend_following:
-    # entry_mode: momentum = buy when price above both MAs (more signals). pullback = buy only on dip to fast MA (fewer).
+    # Retail / more entries: 10/50 MAs, momentum, allow noisier names
     entry_mode: momentum
-    ma_fast: 20
-    ma_slow: 200
+    ma_fast: 10
+    ma_slow: 50
     pullback_touch_ma_fast: true
     pullback_tolerance_pct: 2.0   # used only when entry_mode: pullback
     volatility_filter_atr_period: 14
-    max_atr_pct_for_entry: 2.0   # skip if ATR% > this (too volatile)
+    max_atr_pct_for_entry: 3.0   # allow noisier names for proof-of-life
   exits:
     stop_loss_pct: 1.0
     partial_take_profit_pct: 2.0   # take partial at this % gain
@@ -216,6 +210,27 @@ portfolio_risk:
   max_trades_per_symbol_per_day: 3
 
 # ---------------------------------------------------------------------------
+# 4b) Market regime score (adjust position size by regime)
+# ---------------------------------------------------------------------------
+# Score 0–5: SPY>MA50, QQQ>MA50, VIXY<threshold, HYG rising, TLT falling.
+# 4–5 bullish, 2–3 neutral, 0–1 defensive. Bot detects regime first, then trades sector + targets.
+market_regime:
+  enabled: true
+  symbols:   # Market Regime group (detect only; not in trade universe)
+    spy: SPY
+    qqq: QQQ
+    vix: VIXY       # volatility proxy; raise vix_threshold if using VIXY (e.g. 25)
+    hyg: HYG
+    tlt: TLT
+  ma_period_trend: 50           # for SPY/QQQ above MA
+  ma_period_rising_falling: 20  # for HYG rising / TLT falling
+  vix_threshold: 20
+  size_multipliers:
+    bullish: 1.0    # full size when score 4–5
+    neutral: 0.8     # reduce when score 2–3
+    defensive: 0.5   # half size when score 0–1
+
+# ---------------------------------------------------------------------------
 # 5) Execution
 # ---------------------------------------------------------------------------
 execution:
@@ -238,7 +253,8 @@ broker:
   # Run continuously until market close (no user interaction):
   #   python run_alpaca_loop.py
   run_until_close: false
-  check_interval_minutes: 5
+  exit_check_interval_minutes: 5   # check stop/target/trail/time every 5 min
+  entry_check_interval_minutes: 10  # look for new buys every 10–15 min
   # Retry on API connection drops (e.g. "Remote end closed connection")
   # api_retry_times: 3
   # api_retry_delay_sec: 3.0

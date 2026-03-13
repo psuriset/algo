@@ -3,10 +3,13 @@ Trading engine: orchestrates universe, strategy, sizing, portfolio risk, executi
 
 Runs the full gate sequence before any trade and applies all rules.
 """
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 from .config_loader import load_config
 from .universe import MarketCalendar, UniverseFilter, MarketQualityGate, MarketQualityResult
@@ -79,6 +82,8 @@ class TradingEngine:
         atr_pct: float | None = None,
         ohlcv_df: Any = None,
         symbol_sector: dict[str, str] | None = None,
+        log_strategy_context: bool = False,
+        regime_size_multiplier: float | None = None,
     ) -> TradeDecision:
         """
         Run full gate sequence for an entry. Returns TradeDecision with allowed=False
@@ -136,9 +141,34 @@ class TradingEngine:
         if not can_dt:
             return TradeDecision(allowed=False, reason=reason)
 
+        # Log strategy inputs so "no entry signal" is debuggable
+        if log_strategy_context and ohlcv_df is not None and not ohlcv_df.empty:
+            try:
+                close = ohlcv_df["close"]
+                n = len(close)
+                last_close = float(close.iloc[-1]) if n else None
+                ma_f = float(close.rolling(self.strategy.ma_fast).mean().iloc[-1]) if n >= self.strategy.ma_fast else None
+                ma_s = float(close.rolling(self.strategy.ma_slow).mean().iloc[-1]) if n >= self.strategy.ma_slow else None
+                log.info(
+                    "strategy input %s: close=%.2f ma_fast(%d)=%s ma_slow(%d)=%s atr_pct=%s side_candidate=long",
+                    symbol,
+                    last_close or 0.0,
+                    self.strategy.ma_fast,
+                    f"{ma_f:.2f}" if ma_f is not None else "n/a",
+                    self.strategy.ma_slow,
+                    f"{ma_s:.2f}" if ma_s is not None else "n/a",
+                    f"{atr_pct:.2f}%" if atr_pct is not None else "n/a",
+                )
+            except Exception as e:
+                log.debug("strategy context log failed: %s", e)
+
         entry = self.strategy.generate_entry(symbol, ohlcv_df, spread_pct, atr_pct)
         if entry is None:
             return TradeDecision(allowed=False, reason="no entry signal")
+
+        # Long-only: skip short signals (bearish with no position = skip, not sell-short)
+        if entry.side and entry.side.lower() not in ("long", "buy"):
+            return TradeDecision(allowed=False, reason="long-only: skipping non-long signal")
 
         # Position sizing
         current_with_stops = [
@@ -155,6 +185,7 @@ class TradingEngine:
             sector_exposure_pct=sector_exposure_pct,
             symbol_sector=symbol_sector,
             atr_pct=atr_pct,
+            regime_size_multiplier=regime_size_multiplier,
         )
         if sizing.reject_reason:
             return TradeDecision(
@@ -170,11 +201,12 @@ class TradingEngine:
                 position_sizing=sizing,
             )
 
-        # Build order (limit preferred)
+        # Build order (limit preferred). Map long -> buy for execution/broker.
         mid = ohlcv_df["close"].iloc[-1] if ohlcv_df is not None and not ohlcv_df.empty else 0.0
+        order_side = "buy" if (entry.side or "long").lower() in ("long", "buy") else "sell"
         order = self.execution.build_order(
             symbol=symbol,
-            side=entry.side,
+            side=order_side,
             quantity=sizing.shares,
             mid_price=mid,
             spread_pct=spread_pct,
