@@ -96,6 +96,10 @@ class TrendFollowingStrategy:
         self.max_atr_pct_for_entry = float(tf.get("max_atr_pct_for_entry", 2.0))
 
         self.stop_loss_pct = float(exits.get("stop_loss_pct", 1.0))
+        self.cooldown_after_stop_minutes = float(exits.get("cooldown_after_stop_minutes", 30))
+        self.require_new_breakout_after_stop = bool(exits.get("require_new_breakout_after_stop", False))
+        self.cooldown_after_profit_minutes = float(exits.get("cooldown_after_profit_minutes", 10))
+        self.require_price_above_exit_after_profit = bool(exits.get("require_price_above_exit_after_profit", True))
         tp = exits.get("take_profit_pct")
         self.take_profit_pct = float(tp) if tp is not None and tp != "" else None
         self.partial_take_profit_pct = float(exits.get("partial_take_profit_pct", 2.0))

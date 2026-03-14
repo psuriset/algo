@@ -26,6 +26,12 @@ class TradingEngineState:
     portfolio_risk: PortfolioRiskState = field(default_factory=PortfolioRiskState)
     execution: ExecutionState = field(default_factory=ExecutionState)
     pdt: PDTState = field(default_factory=lambda: PDTState(equity=0.0, day_trades_count_rolling=0, day_trade_dates=[]))
+    # After stop loss: block re-entry for cooldown; optional: require new breakout above stopped price
+    last_stop_loss_at: dict[str, datetime] = field(default_factory=dict)
+    last_stopped_ref_price: dict[str, float] = field(default_factory=dict)
+    # After profit booking: cooldown and require price > previous exit price
+    last_profit_exit_at: dict[str, datetime] = field(default_factory=dict)
+    last_profit_exit_price: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -65,6 +71,17 @@ class TradingEngine:
         )
         self.portfolio_risk.update_equity(self.state.portfolio_risk, dt, equity)
         self.compliance.update_equity(self.state.pdt, equity)
+
+    def record_stop_loss(self, symbol: str, dt: datetime, entry_price: float | None = None) -> None:
+        """Record a stop-loss exit so re-entry is subject to cooldown and optional new-breakout rule."""
+        self.state.last_stop_loss_at[symbol] = dt
+        if entry_price is not None:
+            self.state.last_stopped_ref_price[symbol] = entry_price
+
+    def record_profit_exit(self, symbol: str, dt: datetime, exit_price: float) -> None:
+        """Record a profit-booking exit (take-profit, partial, trailing) so re-entry has cooldown and price > exit."""
+        self.state.last_profit_exit_at[symbol] = dt
+        self.state.last_profit_exit_price[symbol] = exit_price
 
     def is_trading_allowed(self, dt: datetime) -> bool:
         return self.calendar.is_trading_allowed(dt)
@@ -140,6 +157,54 @@ class TradingEngine:
         can_dt, reason = self.compliance.can_day_trade(self.state.pdt, today)
         if not can_dt:
             return TradeDecision(allowed=False, reason=reason)
+
+        # Cooldown after stop loss: avoid immediate re-entry
+        if symbol in self.state.last_stop_loss_at:
+            elapsed_min = (dt - self.state.last_stop_loss_at[symbol]).total_seconds() / 60.0
+            if elapsed_min < self.strategy.cooldown_after_stop_minutes:
+                return TradeDecision(
+                    allowed=False,
+                    reason=f"cooldown after stop loss ({elapsed_min:.0f} min < {self.strategy.cooldown_after_stop_minutes} min)",
+                )
+
+        # Optional: require new breakout above stopped price before re-entry
+        if (
+            self.strategy.require_new_breakout_after_stop
+            and symbol in self.state.last_stopped_ref_price
+            and ohlcv_df is not None
+            and not ohlcv_df.empty
+        ):
+            ref_price = self.state.last_stopped_ref_price[symbol]
+            current_close = float(ohlcv_df["close"].iloc[-1])
+            if current_close <= ref_price:
+                return TradeDecision(
+                    allowed=False,
+                    reason=f"re-entry requires new breakout above stopped price ({current_close:.2f} <= {ref_price:.2f})",
+                )
+
+        # Cooldown after profit booking
+        if symbol in self.state.last_profit_exit_at:
+            elapsed_min = (dt - self.state.last_profit_exit_at[symbol]).total_seconds() / 60.0
+            if elapsed_min < self.strategy.cooldown_after_profit_minutes:
+                return TradeDecision(
+                    allowed=False,
+                    reason=f"cooldown after profit booking ({elapsed_min:.0f} min < {self.strategy.cooldown_after_profit_minutes} min)",
+                )
+
+        # After profit: require price > previous exit price before re-entry
+        if (
+            self.strategy.require_price_above_exit_after_profit
+            and symbol in self.state.last_profit_exit_price
+            and ohlcv_df is not None
+            and not ohlcv_df.empty
+        ):
+            exit_price = self.state.last_profit_exit_price[symbol]
+            current_close = float(ohlcv_df["close"].iloc[-1])
+            if current_close <= exit_price:
+                return TradeDecision(
+                    allowed=False,
+                    reason=f"re-entry after profit requires price > exit price ({current_close:.2f} <= {exit_price:.2f})",
+                )
 
         # Log strategy inputs so "no entry signal" is debuggable
         if log_strategy_context and ohlcv_df is not None and not ohlcv_df.empty:
@@ -218,6 +283,12 @@ class TradingEngine:
                 entry_signal=entry,
                 position_sizing=sizing,
             )
+
+        # Clear stop-loss and profit-exit cooldown state for this symbol now that we allow entry
+        self.state.last_stop_loss_at.pop(symbol, None)
+        self.state.last_stopped_ref_price.pop(symbol, None)
+        self.state.last_profit_exit_at.pop(symbol, None)
+        self.state.last_profit_exit_price.pop(symbol, None)
 
         return TradeDecision(
             allowed=True,
