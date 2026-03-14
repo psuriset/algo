@@ -168,6 +168,7 @@ def main() -> None:
                             print(dt.strftime("%H:%M ET"), symbol, "SELL", qty_to_sell, "shares (partial @ 2%) —", exit_signal.reason.value)
                         remaining = qty - qty_to_sell
                         if remaining <= 0:
+                            engine.record_profit_exit(symbol, dt, quote.mid)
                             remove_tracked(tracker_path, symbol)
                         else:
                             update_tracked(tracker_path, symbol, qty=remaining, partial_taken=True, trail_high=quote.mid)
@@ -176,6 +177,10 @@ def main() -> None:
                         if sell_order:
                             broker.submit_order(sell_order)
                             print(dt.strftime("%H:%M ET"), symbol, "SELL", qty, "shares —", exit_signal.reason.value)
+                        if exit_signal.reason == ExitReason.STOP_LOSS:
+                            engine.record_stop_loss(symbol, dt, entry_price=entry_price)
+                        elif exit_signal.reason in (ExitReason.TAKE_PROFIT, ExitReason.TRAILING_STOP):
+                            engine.record_profit_exit(symbol, dt, quote.mid)
                         remove_tracked(tracker_path, symbol)
             except Exception as e:
                 print(dt.strftime("%H:%M ET"), symbol, "exit check skip —", type(e).__name__, str(e)[:60])

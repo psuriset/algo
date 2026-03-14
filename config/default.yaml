@@ -176,6 +176,10 @@ strategy:
     max_atr_pct_for_entry: 3.0   # allow noisier names for proof-of-life
   exits:
     stop_loss_pct: 1.5
+    cooldown_after_stop_minutes: 30 # avoid immediate re-entry after stop loss
+    require_new_breakout_after_stop: true  # re-entry only after price breaks above stopped level
+    cooldown_after_profit_minutes: 10  # avoid immediate re-entry after profit booking
+    require_price_above_exit_after_profit: true  # re-entry only when price > previous exit price
     take_profit_pct: null           # no fixed full exit; use partial + trailing
     use_trailing_stop: true
     trailing_stop_pct: 3.0          # trail remainder by this % below high
